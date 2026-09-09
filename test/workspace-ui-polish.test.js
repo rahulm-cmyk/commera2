@@ -58,6 +58,20 @@ test('uploaded pages render their sanitized source inside the visual-builder pre
   assert.match(css, /height: 72vh/);
 });
 
+test('store admin preview stays embedded and a pending custom domain is not opened', () => {
+  const storeEditor = source.slice(
+    source.indexOf('function storeView()'),
+    source.indexOf('function settingsView()'),
+  );
+  assert.match(storeEditor, /id="show-store-admin-preview"/);
+  assert.match(storeEditor, /preview\.scrollIntoView/);
+  assert.match(storeEditor, /Domain not ready/);
+  assert.doesNotMatch(
+    storeEditor,
+    /href="\/api\/stores\/\$\{storeId\}\/storefront\/preview" target="_blank"/,
+  );
+});
+
 test('form checkboxes remain compact controls instead of expanding like text fields', () => {
   const css = readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
   assert.match(css, /label\.field\.checkbox > input\[type="checkbox"\]/);

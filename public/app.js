@@ -870,11 +870,21 @@ function storeView() {
             `<option value="${item.id}" ${Number(selected) === Number(item.id) ? "selected" : ""}>${esc(label(item))}</option>`,
         )
         .join(""),
-    status = home.status || "draft";
+    status = home.status || "draft",
+    connectedDomain = (data?.domainOverview?.customDomains || data?.domains || [])[0],
+    activeDomain = activeStoreDomain(),
+    liveStoreAction =
+      data.storefrontPublication?.live || status === "published"
+        ? activeDomain
+          ? `<a class="primary button-link" href="${esc(activeDomain.openUrl)}" target="_blank" rel="noopener">Open Store</a> `
+          : connectedDomain
+            ? `<button class="secondary" type="button" disabled title="Finish domain verification and SSL setup">Domain not ready</button> `
+            : `<a class="primary button-link" href="${esc(storeUrl())}" target="_blank" rel="noopener">Open Store</a> `
+        : "";
 
   setPageHeader(
     "One Store combines identity, homepage, products, checkout, policies, domain, and tracking.",
-    `${(data.storefrontPublication?.live || status === "published") ? `<a class="primary button-link" href="${esc(storeUrl())}" target="_blank" rel="noopener">Open Store</a> ` : ""}<a class="secondary button-link" href="/api/stores/${storeId}/storefront/preview" target="_blank" rel="noopener">Admin Preview</a>`,
+    `${liveStoreAction}<button class="secondary" id="show-store-admin-preview" type="button">Admin Preview</button>`,
   );
   content.innerHTML = `<div class="store-definition"><div><span class="eyebrow">CUSTOMER WEBSITE</span><h2>${esc(data.store.name)}</h2><p>Identity + Home Page + Products + Product Pages + Checkout + Thank You + Policies + Settings</p></div><span class="pill store-home-status status-${esc(status)}">${esc(status)}</span></div>
   <div class="store-editor-grid">
@@ -916,6 +926,11 @@ function storeView() {
   }).join("");
   const pagePreviews = (data.pages || []).map((page) => `<option value="/api/stores/${storeId}/pages/${page.id}/preview">${esc(page.title)}${page.status !== "published" ? " (draft)" : ""}</option>`).join("");
   settingsGrid.insertAdjacentHTML("beforebegin", `<section class="store-workspace" aria-label="Store website editor"><nav class="store-section-nav" aria-label="Store sections"><strong>Website sections</strong>${storeSections.map(([id, label]) => `<button type="button" data-store-section="${id}">${label}</button>`).join("")}</nav><div class="store-settings-area"><div class="store-section-heading"><h2 id="store-section-title"></h2><p id="store-section-scope"></p></div><div id="store-settings-host"></div><section id="store-connections" class="panel" hidden><p>Choose the page that opens when a customer selects a product in your store. Price, stock, media, and orders stay connected to the same product.</p>${connectionRows || "<p>Add a product to connect its page.</p>"}</section></div><section class="store-preview-panel"><div class="store-preview-toolbar"><label class="field">Website preview<select id="store-preview-page"><option value="/api/stores/${storeId}/storefront/preview">Home page</option>${pagePreviews}</select></label><div class="store-preview-devices" role="group" aria-label="Store preview size"><button type="button" class="secondary" data-store-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" class="secondary" data-store-preview-size="mobile" aria-pressed="false">Mobile</button></div><button type="button" class="secondary" id="store-preview-refresh">Refresh preview</button></div><p class="helper-text">Preview shows your saved settings. Save your changes to update it.</p><div class="store-preview-frame" id="store-preview-frame"><iframe id="store-website-preview" title="Store website preview" src="/api/stores/${storeId}/storefront/preview"></iframe></div></section></section>`);
+  $("#show-store-admin-preview").onclick = () => {
+    const preview = $("#store-preview-frame");
+    preview.scrollIntoView({ behavior: "smooth", block: "center" });
+    $("#store-website-preview").focus({ preventScroll: true });
+  };
   $("#store-settings-host").append(settingsGrid);
   const fieldsets = [...$("#store-home-form").querySelectorAll(".store-editor-fieldset")];
   ["announcement", "header", "banner", "featured", "footer"].forEach((id, index) => { fieldsets[index].dataset.storeSectionPanel = id; });
