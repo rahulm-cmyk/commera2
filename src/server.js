@@ -9,6 +9,7 @@ import { ProductOperationsService } from "./product-operations-service.js";
 import { ProjectService } from "./project-service.js";
 import { DeliveryService } from "./delivery-service.js";
 import { DomainService } from "./domain-service.js";
+import { createHttpsDomainProvider } from "./https-domain-provider.js";
 import { PixelService } from "./pixel-service.js";
 import { SettingsService, defaultSettings } from "./settings-service.js";
 import { ShippingService } from "./shipping-service.js";
@@ -1059,11 +1060,18 @@ export function createApp({
   const storefront = new StorefrontService(db);
   const onlineStore = new OnlineStoreService(db);
   const delivery = new DeliveryService(db, { adapters: deliveryAdapters });
-  const domains = new DomainService(db, {
+  const domainSslMode = String(
+      process.env.DOMAIN_SSL_PROVIDER ||
+        (process.env.RENDER === "true" ? "https" : "manual"),
+    ).toLowerCase(),
+    domains = new DomainService(db, {
     cnameTarget: process.env.DOMAIN_CNAME_TARGET,
     apexTarget: process.env.DOMAIN_APEX_TARGET,
     platformDomain: process.env.DOMAIN_PLATFORM_HOST,
     provider: process.env.DOMAIN_PROVIDER,
+    ...(domainSslMode === "https"
+      ? { sslProvider: createHttpsDomainProvider() }
+      : {}),
     ...domainOptions,
   });
   const liveVisitors = new LiveVisitorService(db);

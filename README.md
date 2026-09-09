@@ -109,8 +109,10 @@ host and routing targets with `DOMAIN_PLATFORM_HOST`, `DOMAIN_CNAME_TARGET`, and
 when required by the hosting provider, `DOMAIN_APEX_TARGET`.
 
 The local `manual` provider truthfully remains at **SSL Pending** after DNS verifies.
-A production deployment must supply an authorized `sslProvider` adapter through
-`domainOptions`; a domain is never marked Active until that adapter confirms HTTPS.
+On Render, Commera automatically checks the public HTTPS endpoint every minute and
+marks the domain Active only after Render has issued its certificate. Add the domain
+to Render first under **Settings > Custom Domains**; this check does not create a
+Render domain association. Other hosts can opt in with `DOMAIN_SSL_PROVIDER=https`.
 
 ## Test
 

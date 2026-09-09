@@ -874,7 +874,7 @@ function storeView() {
 
   setPageHeader(
     "One Store combines identity, homepage, products, checkout, policies, domain, and tracking.",
-    `<a class="secondary button-link" href="/api/stores/${storeId}/storefront/preview" target="_blank" rel="noopener">Preview</a>${(data.storefrontPublication?.live || status === "published") ? ` <a class="primary button-link" href="${esc(storeUrl())}" target="_blank" rel="noopener">Open Live Store</a>` : ""}`,
+    `${(data.storefrontPublication?.live || status === "published") ? `<a class="primary button-link" href="${esc(storeUrl())}" target="_blank" rel="noopener">Open Store</a> ` : ""}<a class="secondary button-link" href="/api/stores/${storeId}/storefront/preview" target="_blank" rel="noopener">Admin Preview</a>`,
   );
   content.innerHTML = `<div class="store-definition"><div><span class="eyebrow">CUSTOMER WEBSITE</span><h2>${esc(data.store.name)}</h2><p>Identity + Home Page + Products + Product Pages + Checkout + Thank You + Policies + Settings</p></div><span class="pill store-home-status status-${esc(status)}">${esc(status)}</span></div>
   <div class="store-editor-grid">
