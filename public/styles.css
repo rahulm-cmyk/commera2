@@ -4040,6 +4040,14 @@ dialog {
   border-radius: 10px;
   margin: 14px 0;
 }
+#builder-imported-page-preview {
+  display: block;
+  width: 100%;
+  min-height: 680px;
+  height: 72vh;
+  border: 0;
+  background: #fff;
+}
 .page-section-card[data-configurable="true"] {
   background: #fbfcf8;
   margin: 0 -10px;

@@ -49,6 +49,15 @@ test('editor uses a real banner preview and structured links without the raw nav
   assert.match(css, /store-editor-panel \.form-columns \{ grid-template-columns:minmax\(0,1fr\)/);
 });
 
+test('uploaded pages render their sanitized source inside the visual-builder preview', () => {
+  assert.match(source, /page\.creationMethod === "upload" && page\.importedHtml/);
+  assert.match(source, /id="builder-imported-page-preview"/);
+  assert.match(source, /frame\.srcdoc/);
+  const css = readFileSync(new URL('../public/styles.css', import.meta.url), 'utf8');
+  assert.match(css, /#builder-imported-page-preview/);
+  assert.match(css, /height: 72vh/);
+});
+
 test('form checkboxes remain compact controls instead of expanding like text fields', () => {
   const css = readFileSync(new URL('../public/styles.css',import.meta.url),'utf8');
   assert.match(css, /label\.field\.checkbox > input\[type="checkbox"\]/);

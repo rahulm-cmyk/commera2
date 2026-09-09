@@ -198,7 +198,7 @@ export function sanitizeImportedHtml(input) {
       "h6", "strong", "b", "em", "i", "u", "s", "small", "blockquote",
       "pre", "code", "ul", "ol", "li", "dl", "dt", "dd", "figure",
       "figcaption", "picture", "img", "video", "audio", "source", "a",
-      "table", "thead", "tbody", "tfoot", "tr", "th", "td",
+      "table", "thead", "tbody", "tfoot", "tr", "th", "td", "button",
     ],
     allowedAttributes: {
       "*": ["class", "id", "title", "style", "role", "aria-*", "data-*"],
@@ -207,6 +207,7 @@ export function sanitizeImportedHtml(input) {
       video: ["src", "poster", "controls", "muted", "loop", "autoplay", "playsinline"],
       audio: ["src", "controls", "muted", "loop", "autoplay"],
       source: ["src", "srcset", "type", "media"],
+      button: ["type", "disabled"],
       th: ["colspan", "rowspan", "scope"],
       td: ["colspan", "rowspan"],
     },
@@ -230,6 +231,31 @@ export function sanitizeImportedHtml(input) {
   }).trim();
 }
 
+function safeImportedStyles(input) {
+  const css = String(input || "").trim();
+  if (!css || Buffer.byteLength(css) > 200_000) return "";
+  // Imported CSS is visual-only: remove network fetches and obsolete script-like
+  // CSS features while retaining the layout, colors, animations, and responsive rules.
+  const safe = css
+    .replace(/@import\s+(?:url\()?[^;]+;?/gi, "")
+    .replace(/(?:url|image-set)\s*\([^)]*\)/gi, "none")
+    .replace(/(?:expression|behavior|-moz-binding)\s*:[^;}]+;?/gi, "")
+    .replace(/<\/?style\b[^>]*>/gi, "");
+  return safe.trim() ? `<style>${safe}</style>` : "";
+}
+
+function prepareImportedPageHtml(input) {
+  const html = String(input || "");
+  const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)]
+    .map((match) => safeImportedStyles(match[1]))
+    .filter(Boolean)
+    .join("\n");
+  const body = html
+    .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "")
+    .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, "");
+  return `${styles}${sanitizeImportedHtml(body)}`.trim();
+}
+
 export function processPageImport(input) {
   const fileName = clean(input.fileName),
     extension = fileName.toLowerCase().match(/\.(html?|HTML?)$/i);
@@ -245,7 +271,7 @@ export function processPageImport(input) {
   if (!buffer.length) throw Error("Uploaded page HTML is empty");
   if (buffer.length > 500_000)
     throw Error("Uploaded page exceeds the 500 KB limit");
-  let sanitized = sanitizeImportedHtml(buffer.toString("utf8"));
+  let sanitized = prepareImportedPageHtml(buffer.toString("utf8"));
   const body = sanitized.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i);
   if (body) sanitized = body[1].trim();
   sanitized = sanitized
@@ -426,7 +452,7 @@ export class ProjectService {
     const processed = input.fileContentBase64
       ? processPageImport(input)
       : {
-          previewHtml: sanitizeImportedHtml(input.html),
+          previewHtml: prepareImportedPageHtml(input.html),
           fileName: "legacy-import.html",
           mimeType: "text/html",
         };

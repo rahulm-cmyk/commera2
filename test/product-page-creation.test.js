@@ -37,7 +37,7 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   const base = `http://127.0.0.1:${app.port}`;
   const { store, product } = await setup(base);
   const source =
-      '<!doctype html><html><head><title>Imported Hair Ritual</title><script>alert(1)</script></head><body><main><h1 onclick="bad()">Imported Hair Ritual</h1><p>Real imported content.</p><a href="javascript:bad()">Buy now</a><form><input></form></main></body></html>',
+      '<!doctype html><html><head><title>Imported Hair Ritual</title><style>.ritual{color:teal} @import url(https://bad.example/style.css);</style><script>alert(1)</script></head><body><main class="ritual"><h1 onclick="bad()">Imported Hair Ritual</h1><p>Real imported content.</p><a href="javascript:bad()">Buy now</a><form><input></form></main></body></html>',
     fileContentBase64 = Buffer.from(source).toString("base64");
   let result = await call(
     base,
@@ -48,6 +48,8 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   assert.equal(result.response.status, 200);
   assert.equal(result.body.fileName, "ritual.html");
   assert.match(result.body.previewHtml, /Imported Hair Ritual/);
+  assert.match(result.body.previewHtml, /\.ritual\{color:teal\}/);
+  assert.doesNotMatch(result.body.previewHtml, /@import|bad\.example|<title/i);
   assert.doesNotMatch(
     result.body.previewHtml,
     /script|onclick|javascript:|<form/i,

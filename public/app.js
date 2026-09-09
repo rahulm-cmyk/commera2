@@ -6683,6 +6683,12 @@ async function openVisualProductPageBuilder(pageId, helpers) {
     if (!canvas) return;
     canvas.className = `builder-live-page ${builder.viewport}`;
     canvas.style.cssText = `--builder-primary:${builder.pageSettings.primaryColor};--builder-secondary:${builder.pageSettings.secondaryColor};--builder-text:${builder.pageSettings.textColor};--builder-bg:${builder.pageSettings.backgroundColor};--builder-max:${Number(builder.pageSettings.maxWidth) || 1200}px;--builder-heading:${builder.pageSettings.headingFont};--builder-body:${builder.pageSettings.bodyFont};`;
+    if (page.creationMethod === "upload" && page.importedHtml) {
+      canvas.innerHTML = `<iframe id="builder-imported-page-preview" title="Imported page preview" sandbox></iframe>`;
+      const frame = $("#builder-imported-page-preview");
+      frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${page.importedHtml}</body></html>`;
+      return;
+    }
     canvas.innerHTML = `<div class="builder-page-inner">${builder.sections.map(renderPreviewSection).join("") || '<div class="blank-page"><h3>Blank page</h3><p>Add a section to start building.</p></div>'}</div>`;
     canvas.querySelectorAll("[data-builder-section]").forEach(
       (element) =>
