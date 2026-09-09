@@ -224,13 +224,21 @@ export class DomainService {
               requiredValue: this.apexTarget,
               detectedValue: item.detectedCname || "",
             }
+          : hostnameKind === "apex"
+            ? {
+                type: "ALIAS / ANAME",
+                host: "@",
+                requiredValue: this.cnameTarget,
+                detectedValue: item.detectedCname || "",
+              }
           : {
               type: "CNAME",
-              host: hostnameKind === "apex" ? "@" : item.domainName,
+              host: item.domainName,
               requiredValue: this.cnameTarget,
               detectedValue: item.detectedCname || "",
             },
       routeCorrect =
+        ["verified", "active"].includes(item.routingStatus) ||
         trimDot(routeRecord.detectedValue) === trimDot(routeRecord.requiredValue),
       needsOwnershipTxt = hostnameKind === "apex",
       dnsRecords = [
@@ -328,14 +336,29 @@ export class DomainService {
     this.requireHosting();
     const domain = this.getDomain(storeId, id),
       ownershipRecord = domain.dnsRecords.find((record) => record.type === "TXT"),
+      supportsApexAlias =
+        domain.hostnameKind === "apex" &&
+        typeof this.dnsResolver.resolve4 === "function",
       routeLookup =
         domain.dnsRecords[0].type === "A"
           ? lookupResult(this.dnsResolver.resolve4(domain.domainName))
-          : lookupResult(this.dnsResolver.resolveCname(domain.domainName)),
+          : supportsApexAlias
+            ? Promise.all([
+                lookupResult(this.dnsResolver.resolve4(domain.domainName)),
+                lookupResult(this.dnsResolver.resolve4(this.cnameTarget)),
+              ])
+            : lookupResult(this.dnsResolver.resolveCname(domain.domainName)),
       txtLookup = ownershipRecord
         ? lookupResult(this.dnsResolver.resolveTxt(domain.txtName))
         : Promise.resolve({ values: [], failed: false }),
-      [routeResult, txtResult] = await Promise.all([routeLookup, txtLookup]);
+      [rawRouteResult, txtResult] = await Promise.all([routeLookup, txtLookup]),
+      routeResult = supportsApexAlias
+        ? {
+            values: rawRouteResult[0].values,
+            expectedValues: rawRouteResult[1].values,
+            failed: rawRouteResult.some((result) => result.failed),
+          }
+        : rawRouteResult;
     if (routeResult.failed || txtResult.failed) {
       this.db
         .prepare(
@@ -351,9 +374,12 @@ export class DomainService {
       throw new Error("We could not check the domain right now. Please try again.");
     }
     const routeValues = routeResult.values.map(trimDot),
+      expectedRouteValues = (routeResult.expectedValues || []).map(trimDot),
       txtValues = txtResult.values.flat().map(clean),
       routeRequired = domain.dnsRecords[0].requiredValue,
-      routeReady = routeValues.includes(trimDot(routeRequired)),
+      routeReady = supportsApexAlias
+        ? routeValues.some((value) => expectedRouteValues.includes(value))
+        : routeValues.includes(trimDot(routeRequired)),
       ownershipReady = ownershipRecord ? txtValues.includes(domain.txtValue) : routeReady,
       dnsReady = routeReady && ownershipReady,
       dnsStatus = dnsReady
@@ -376,12 +402,12 @@ export class DomainService {
         : errorCode === "INCORRECT_DNS_VALUE"
           ? "The DNS record points to a different destination."
           : !ownershipRecord
-            ? "CNAME record was not found. Point the domain to the required CNAME value, then check again."
+            ? "The domain record was not found. Point the domain to the required destination, then check again."
             : routeReady
             ? "Ownership TXT record was not found. Add the TXT record at your DNS provider, then check again."
             : ownershipReady
-              ? "CNAME record was not found. Point the domain to the required CNAME value, then check again."
-              : "CNAME and ownership TXT records were not found. Your DNS provider must support both records.";
+              ? "The domain record was not found. Point the domain to the required destination, then check again."
+              : "The domain and ownership TXT records were not found. Add both records, then check again.";
     this.db
       .prepare(
         `UPDATE custom_domains SET dns_status=?,ownership_status=?,routing_status=?,overall_status=?,status=?,

@@ -217,6 +217,51 @@ test("subdomain custom domains verify with CNAME only", async (t) => {
   assert.equal(txtLookups, 0);
 });
 
+test("root domains verify through an ALIAS or ANAME record", async (t) => {
+  let ownershipToken = "";
+  const app = createApp({
+    db: createDatabase(":memory:"),
+    port: 0,
+    domainOptions: {
+      cnameTarget: "commera2.onrender.com",
+      dnsResolver: {
+        async resolve4(name) {
+          return name === "commera2.onrender.com"
+            ? ["216.24.57.7", "216.24.57.15"]
+            : ["216.24.57.15", "216.24.57.7"];
+        },
+        async resolveTxt() {
+          return [[ownershipToken]];
+        },
+      },
+      sslProvider: {
+        async provisionDomain() {
+          return { status: "active" };
+        },
+      },
+    },
+  });
+  await app.start();
+  t.after(() => app.stop());
+  const base = `http://127.0.0.1:${app.port}`;
+  const { store } = await makeStore(base, "Root", "root");
+  let result = await call(base, `/api/stores/${store.id}/domains`, "POST", {
+    domainName: "example.com",
+  });
+  ownershipToken = result.body.txtValue;
+  assert.equal(result.body.dnsRecords[0].type, "ALIAS / ANAME");
+  assert.equal(result.body.dnsRecords[0].host, "@");
+
+  result = await call(
+    base,
+    `/api/stores/${store.id}/domains/${result.body.id}/verify`,
+    "POST",
+    {},
+  );
+  assert.equal(result.body.overallStatus, "ACTIVE");
+  assert.equal(result.body.dnsRecords[0].currentStatus, "correct");
+});
+
 test("primary host serves product, checkout, policy and correct pixel while secondary preserves path and query", async (t) => {
   const tokens = new Map();
   const app = createApp({
