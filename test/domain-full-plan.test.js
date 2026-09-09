@@ -78,7 +78,7 @@ test("domain validation normalizes a simple URL and rejects unsafe hostname inpu
   assert.equal(result.body.domainName, "www.example.com");
   assert.equal(result.body.hostnameKind, "subdomain");
   assert.equal(result.body.overallStatus, "PENDING_CONFIGURATION");
-  assert.equal(result.body.dnsRecords.length, 2);
+  assert.deepEqual(result.body.dnsRecords.map((record) => record.type), ["CNAME"]);
 
   result = await call(base, `/api/stores/${second.store.id}/domains`, "POST", {
     domainName: "www.example.com",
@@ -137,7 +137,7 @@ test("DNS records update independently and successful verification activates SSL
   const base = `http://127.0.0.1:${app.port}`;
   const { store } = await makeStore(base, "Records", "records");
   let result = await call(base, `/api/stores/${store.id}/domains`, "POST", {
-    domainName: "shop.records.example",
+    domainName: "records.example",
   });
   const id = result.body.id;
   expectedToken = result.body.txtValue;
@@ -168,6 +168,53 @@ test("DNS records update independently and successful verification activates SSL
   const audit = await call(base, `/api/stores/${store.id}/domains/audit-log`);
   assert.ok(audit.body.some((entry) => entry.action === "DNS_VERIFIED"));
   assert.ok(audit.body.some((entry) => entry.action === "SSL_ACTIVATED"));
+});
+
+test("subdomain custom domains verify with CNAME only", async (t) => {
+  let routeReady = false;
+  let txtLookups = 0;
+  const app = createApp({
+    db: createDatabase(":memory:"),
+    port: 0,
+    domainOptions: {
+      cnameTarget: "domains.commera2.app",
+      dnsResolver: {
+        async resolveCname() {
+          return routeReady ? ["domains.commera2.app"] : [];
+        },
+        async resolveTxt() {
+          txtLookups += 1;
+          return [];
+        },
+      },
+      sslProvider: {
+        async provisionDomain() {
+          return { status: "active" };
+        },
+      },
+    },
+  });
+  await app.start();
+  t.after(() => app.stop());
+  const base = `http://127.0.0.1:${app.port}`;
+  const { store } = await makeStore(base, "Subdomain", "subdomain");
+  let result = await call(base, `/api/stores/${store.id}/domains`, "POST", {
+    domainName: "shop.subdomain.example",
+  });
+  assert.deepEqual(result.body.dnsRecords.map((record) => record.type), ["CNAME"]);
+  assert.equal(result.body.ownershipVerificationMethod, "dns_cname");
+
+  routeReady = true;
+  result = await call(
+    base,
+    `/api/stores/${store.id}/domains/${result.body.id}/verify`,
+    "POST",
+    {},
+  );
+  assert.equal(result.body.overallStatus, "ACTIVE");
+  assert.equal(result.body.dnsReady, undefined);
+  assert.equal(result.body.ownershipStatus, "verified");
+  assert.equal(txtLookups, 0);
 });
 
 test("primary host serves product, checkout, policy and correct pixel while secondary preserves path and query", async (t) => {

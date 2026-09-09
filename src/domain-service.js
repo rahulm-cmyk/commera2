@@ -231,7 +231,31 @@ export class DomainService {
               detectedValue: item.detectedCname || "",
             },
       routeCorrect =
-        trimDot(routeRecord.detectedValue) === trimDot(routeRecord.requiredValue);
+        trimDot(routeRecord.detectedValue) === trimDot(routeRecord.requiredValue),
+      needsOwnershipTxt = hostnameKind === "apex",
+      dnsRecords = [
+        {
+          ...routeRecord,
+          currentStatus: routeCorrect
+            ? "correct"
+            : routeRecord.detectedValue
+              ? "incorrect"
+              : "pending",
+        },
+      ];
+    if (needsOwnershipTxt)
+      dnsRecords.push({
+        type: "TXT",
+        host: item.txtName,
+        requiredValue: item.txtValue,
+        detectedValue: item.detectedTxt || "",
+        currentStatus:
+          item.ownershipStatus === "verified"
+            ? "correct"
+            : item.detectedTxt
+              ? "incorrect"
+              : "pending",
+      });
     return {
       ...item,
       primaryDomain: Boolean(item.primaryDomain),
@@ -248,28 +272,8 @@ export class DomainService {
       hostnameKind,
       openUrl: `https://${item.domainName}`,
       hostingConfigured: Boolean(this.cnameTarget),
-      dnsRecords: this.cnameTarget ? [
-        {
-          ...routeRecord,
-          currentStatus: routeCorrect
-            ? "correct"
-            : routeRecord.detectedValue
-              ? "incorrect"
-              : "pending",
-        },
-        {
-          type: "TXT",
-          host: item.txtName,
-          requiredValue: item.txtValue,
-          detectedValue: item.detectedTxt || "",
-          currentStatus:
-            item.ownershipStatus === "verified"
-              ? "correct"
-              : item.detectedTxt
-                ? "incorrect"
-                : "pending",
-        },
-      ] : [],
+      ownershipVerificationMethod: needsOwnershipTxt ? "dns_txt" : "dns_cname",
+      dnsRecords: this.cnameTarget ? dnsRecords : [],
     };
   }
 
@@ -309,11 +313,14 @@ export class DomainService {
   async checkDns(storeId, id, actor = "merchant") {
     this.requireHosting();
     const domain = this.getDomain(storeId, id),
+      ownershipRecord = domain.dnsRecords.find((record) => record.type === "TXT"),
       routeLookup =
         domain.dnsRecords[0].type === "A"
           ? lookupResult(this.dnsResolver.resolve4(domain.domainName))
           : lookupResult(this.dnsResolver.resolveCname(domain.domainName)),
-      txtLookup = lookupResult(this.dnsResolver.resolveTxt(domain.txtName)),
+      txtLookup = ownershipRecord
+        ? lookupResult(this.dnsResolver.resolveTxt(domain.txtName))
+        : Promise.resolve({ values: [], failed: false }),
       [routeResult, txtResult] = await Promise.all([routeLookup, txtLookup]);
     if (routeResult.failed || txtResult.failed) {
       this.db
@@ -333,7 +340,7 @@ export class DomainService {
       txtValues = txtResult.values.flat().map(clean),
       routeRequired = domain.dnsRecords[0].requiredValue,
       routeReady = routeValues.includes(trimDot(routeRequired)),
-      ownershipReady = txtValues.includes(domain.txtValue),
+      ownershipReady = ownershipRecord ? txtValues.includes(domain.txtValue) : routeReady,
       dnsReady = routeReady && ownershipReady,
       dnsStatus = dnsReady
         ? "verified"
@@ -354,7 +361,9 @@ export class DomainService {
         ? ""
         : errorCode === "INCORRECT_DNS_VALUE"
           ? "The DNS record points to a different destination."
-          : routeReady
+          : !ownershipRecord
+            ? "CNAME record was not found. Point the domain to the required CNAME value, then check again."
+            : routeReady
             ? "Ownership TXT record was not found. Add the TXT record at your DNS provider, then check again."
             : ownershipReady
               ? "CNAME record was not found. Point the domain to the required CNAME value, then check again."
@@ -397,7 +406,7 @@ export class DomainService {
       dnsReady,
       cnameReady: routeReady,
       routingReady: routeReady,
-      txtReady: ownershipReady,
+      txtReady: ownershipRecord ? ownershipReady : null,
       ownershipReady,
     };
   }
