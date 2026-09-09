@@ -1060,15 +1060,17 @@ export function createApp({
   const storefront = new StorefrontService(db);
   const onlineStore = new OnlineStoreService(db);
   const delivery = new DeliveryService(db, { adapters: deliveryAdapters });
-  const domainSslMode = String(
+  const hostedByRender = process.env.RENDER === "true",
+    domainSslMode = String(
       process.env.DOMAIN_SSL_PROVIDER ||
-        (process.env.RENDER === "true" ? "https" : "manual"),
+        (hostedByRender ? "https" : "manual"),
     ).toLowerCase(),
     domains = new DomainService(db, {
     cnameTarget: process.env.DOMAIN_CNAME_TARGET,
     apexTarget: process.env.DOMAIN_APEX_TARGET,
     platformDomain: process.env.DOMAIN_PLATFORM_HOST,
     provider: process.env.DOMAIN_PROVIDER,
+    requireOwnershipTxt: !hostedByRender,
     ...(domainSslMode === "https"
       ? { sslProvider: createHttpsDomainProvider() }
       : {}),

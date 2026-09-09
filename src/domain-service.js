@@ -87,6 +87,7 @@ export class DomainService {
       apexTarget = "",
       platformDomain = "shops.commera2.app",
       provider = "manual",
+      requireOwnershipTxt = true,
     } = {},
   ) {
     this.db = db;
@@ -96,6 +97,7 @@ export class DomainService {
     this.apexTarget = clean(apexTarget);
     this.platformDomain = normalizeDomain(platformDomain);
     this.provider = clean(provider) || "manual";
+    this.requireOwnershipTxt = Boolean(requireOwnershipTxt);
   }
 
   defaultDomain(storeOrId) {
@@ -240,7 +242,7 @@ export class DomainService {
       routeCorrect =
         ["verified", "active"].includes(item.routingStatus) ||
         trimDot(routeRecord.detectedValue) === trimDot(routeRecord.requiredValue),
-      needsOwnershipTxt = hostnameKind === "apex",
+      needsOwnershipTxt = hostnameKind === "apex" && this.requireOwnershipTxt,
       dnsRecords = [
         {
           ...routeRecord,
@@ -280,7 +282,11 @@ export class DomainService {
       hostnameKind,
       openUrl: `https://${item.domainName}`,
       hostingConfigured: Boolean(this.cnameTarget),
-      ownershipVerificationMethod: needsOwnershipTxt ? "dns_txt" : "dns_cname",
+      ownershipVerificationMethod: needsOwnershipTxt
+        ? "dns_txt"
+        : hostnameKind === "apex"
+          ? "https"
+          : "dns_cname",
       dnsRecords: this.cnameTarget ? dnsRecords : [],
     };
   }

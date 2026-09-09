@@ -112,7 +112,9 @@ The local `manual` provider truthfully remains at **SSL Pending** after DNS veri
 On Render, Commera automatically checks the public HTTPS endpoint every minute and
 marks the domain Active only after Render has issued its certificate. Add the domain
 to Render first under **Settings > Custom Domains**; this check does not create a
-Render domain association. Other hosts can opt in with `DOMAIN_SSL_PROVIDER=https`.
+Render domain association. Render hosts do not need Commera's additional TXT record:
+Render's HTTPS certificate proves the domain connection. Other hosts can opt in with
+`DOMAIN_SSL_PROVIDER=https`.
 
 ## Test
 

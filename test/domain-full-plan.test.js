@@ -262,6 +262,52 @@ test("root domains verify through an ALIAS or ANAME record", async (t) => {
   assert.equal(result.body.dnsRecords[0].currentStatus, "correct");
 });
 
+test("Render root domains use the Render HTTPS certificate instead of a second TXT record", async (t) => {
+  const app = createApp({
+    db: createDatabase(":memory:"),
+    port: 0,
+    domainOptions: {
+      cnameTarget: "commera2.onrender.com",
+      requireOwnershipTxt: false,
+      dnsResolver: {
+        async resolve4(name) {
+          return name === "commera2.onrender.com"
+            ? ["216.24.57.7", "216.24.57.15"]
+            : ["216.24.57.15", "216.24.57.7"];
+        },
+        async resolveTxt() {
+          throw new Error("A Render domain must not require a Commera TXT record");
+        },
+      },
+      sslProvider: {
+        async provisionDomain() {
+          return { status: "active" };
+        },
+      },
+    },
+  });
+  await app.start();
+  t.after(() => app.stop());
+  const base = `http://127.0.0.1:${app.port}`;
+  const { store } = await makeStore(base, "Render Root", "render-root");
+  let result = await call(base, `/api/stores/${store.id}/domains`, "POST", {
+    domainName: "example.com",
+  });
+  assert.deepEqual(result.body.dnsRecords.map((record) => record.type), [
+    "ALIAS / ANAME",
+  ]);
+  assert.equal(result.body.ownershipVerificationMethod, "https");
+
+  result = await call(
+    base,
+    `/api/stores/${store.id}/domains/${result.body.id}/verify`,
+    "POST",
+    {},
+  );
+  assert.equal(result.body.overallStatus, "ACTIVE");
+  assert.equal(result.body.ownershipStatus, "verified");
+});
+
 test("primary host serves product, checkout, policy and correct pixel while secondary preserves path and query", async (t) => {
   const tokens = new Map();
   const app = createApp({
