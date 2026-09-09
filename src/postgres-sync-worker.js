@@ -8,10 +8,14 @@ pg.types.setTypeParser(1184,value=>value);
 const port=workerData.port;
 const client=new pg.Client({connectionString:workerData.connectionString});
 const identityTables=new Set();
+async function refreshIdentityTables(){
+  const identityResult=await client.query("SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='id' AND is_identity='YES'");
+  identityTables.clear();
+  for(const row of identityResult.rows)identityTables.add(row.table_name);
+}
 const ready=(async()=>{
   await client.connect();
-  const identityResult=await client.query("SELECT table_name FROM information_schema.columns WHERE table_schema='public' AND column_name='id' AND is_identity='YES'");
-  for(const row of identityResult.rows)identityTables.add(row.table_name);
+  await refreshIdentityTables();
 })();
 
 function dialect(input){
@@ -37,6 +41,11 @@ port.on('message',async message=>{
   const signal=new Int32Array(message.signal);
   try{
     await ready;
+    if(message.mode==='refresh-identities'){
+      await refreshIdentityTables();
+      port.postMessage({ok:true,data:{changes:0}});
+      return;
+    }
     let sql=dialect(message.sql);
     if(message.mode==='run'){
       const table=sql.match(/^INSERT\s+INTO\s+"?([a-z_][a-z0-9_]*)"?/i)?.[1];

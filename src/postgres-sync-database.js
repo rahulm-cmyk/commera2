@@ -19,6 +19,6 @@ export class PostgresSyncDatabase{
   }
   prepare(sql){return{get:(...params)=>this.#query('get',sql,params),all:(...params)=>this.#query('all',sql,params),run:(...params)=>this.#query('run',sql,params)};}
   exec(sql){return this.#query('exec',sql);}
+  refreshIdentityTables(){return this.#query('refresh-identities');}
   close(){this.port.close();return this.worker.terminate();}
 }
-

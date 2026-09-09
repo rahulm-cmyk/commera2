@@ -94,6 +94,7 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       db.__commera2DatabaseMode = "postgres";
       db.__commera2Persistent = true;
       bootstrapEmptyPostgresSchema(db);
+      db.refreshIdentityTables();
       const legacyPageKind = ["page", "type"].join("_");
       const legacyDestination = ["destination", "slug"].join("_");
       db.exec(`DO $$
