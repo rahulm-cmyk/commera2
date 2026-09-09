@@ -354,7 +354,11 @@ export class DomainService {
         ? ""
         : errorCode === "INCORRECT_DNS_VALUE"
           ? "The DNS record points to a different destination."
-          : "Required DNS record was not found.";
+          : routeReady
+            ? "Ownership TXT record was not found. Add the TXT record at your DNS provider, then check again."
+            : ownershipReady
+              ? "CNAME record was not found. Point the domain to the required CNAME value, then check again."
+              : "CNAME and ownership TXT records were not found. Your DNS provider must support both records.";
     this.db
       .prepare(
         `UPDATE custom_domains SET dns_status=?,ownership_status=?,routing_status=?,overall_status=?,status=?,

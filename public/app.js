@@ -3729,6 +3729,10 @@ function domainsView() {
       domain.lastChecked
         ? new Date(`${domain.lastChecked}${String(domain.lastChecked).endsWith("Z") ? "" : "Z"}`).toLocaleString("en-IN")
         : "Not checked yet",
+    defaultStoreUrl = overview.defaultDomain?.openUrl || overview.defaultDomain?.path || `/s/${encodeURIComponent(data.store.slug)}`,
+    customDomainReadyText = overview.hostingConfigured
+      ? "Custom domains are available. Your DNS provider must support normal CNAME and TXT records."
+      : "Custom domains are blocked until platform hosting is configured.",
     menu = (domain, suffix = "") => `<details class="row-menu domain-row-menu"><summary aria-label="Manage ${esc(domain.domainName)}">⋯</summary><div>
       ${domain.overallStatus === "ACTIVE" ? `<a href="${esc(domain.openUrl)}" target="_blank" rel="noopener">Open Domain</a>` : ""}
       <button class="domain-instructions" data-id="${domain.id}" type="button">View DNS Instructions</button>
@@ -3746,13 +3750,15 @@ function domainsView() {
         (domain) => `<article class="data-mobile-card domain-mobile-card"><header><div><strong>${esc(domain.domainName)}</strong><span>${domain.hostnameKind === "apex" ? "Root domain" : "Subdomain"}</span></div>${menu(domain, "-mobile")}</header><dl><div><dt>Status</dt><dd>${esc(domainStatus(domain))}</dd></div><div><dt>DNS</dt><dd>${esc(dnsStatus(domain))}</dd></div><div><dt>Ownership</dt><dd>${domain.ownershipStatus === "verified" ? "Verified" : domain.ownershipStatus === "failed" ? "Failed" : "Pending"}</dd></div><div><dt>SSL</dt><dd>${esc(sslStatus(domain))}</dd></div><div><dt>Role</dt><dd>${domain.primaryDomain ? "Primary" : "Redirect"}</dd></div><div class="mobile-card-wide"><dt>Last Checked</dt><dd>${esc(checkedAt(domain))}</dd></div></dl>${domain.errorMessage || domain.lastError ? `<p class="domain-error">${esc(domain.errorMessage || domain.lastError)}</p>` : ""}</article>`,
       )
       .join("");
-  content.innerHTML = `<section class="domain-hero"><div><span class="eyebrow">STORE DOMAIN</span><h2>Domain</h2><p>Use a custom domain for your customer-facing store.</p></div><button class="primary" id="add-domain">Connect Domain</button></section>
+  content.innerHTML = `<section class="domain-hero"><div><span class="eyebrow">STORE DOMAIN</span><h2>Domain</h2><p>Start with the built-in store link. Add a custom domain only when your DNS provider supports CNAME and TXT records.</p></div><button class="primary" id="add-domain">Connect Custom Domain</button></section>
+    <section class="panel domain-simple-card"><div><small>Ready now</small><strong>Use your store link for testing</strong><code>${esc(defaultStoreUrl)}</code></div><button class="secondary copy-domain-value" data-copy="${esc(defaultStoreUrl)}" type="button">Copy store link</button></section>
+    <section class="panel domain-simple-card domain-warning-card"><div><small>Custom domain requirement</small><strong>CNAME + TXT records are required</strong><span>${esc(customDomainReadyText)} Free DNS panels that only support SPF TXT records cannot verify ownership.</span></div></section>
     <section class="panel domain-summary" aria-label="Domain List">${domains.length ? domains.map((domain) => `<article><div><small>Custom domain</small><strong>${esc(domain.domainName)}</strong><span>${esc(domainStatus(domain))} · DNS ${esc(dnsStatus(domain))} · SSL ${esc(sslStatus(domain))}</span></div><span class="pill">${domain.primaryDomain ? "Primary" : "Custom"}</span></article>`).join("") : `<article class="domain-empty-row"><div><small>Custom domain</small><strong>No custom domain connected</strong><span>Connect an existing domain when you are ready.</span></div></article>`}</section>
     ${domains.length ? `<section class="panel list-panel domain-list-panel"><div class="panel-head"><div><h3>Connected domains</h3><span>DNS, ownership, SSL, routing, and primary-domain state.</span></div></div><div class="table-scroll data-desktop-list"><table class="domain-table"><thead><tr><th>Domain</th><th>DNS</th><th>Ownership</th><th>SSL</th><th>Role</th><th>Status / Last Checked</th><th>Actions</th></tr></thead><tbody>${desktopRows}</tbody></table></div><div class="data-mobile-list" aria-label="Connected domains">${mobileCards}</div></section>` : ""}`;
 
-  const recordTable = (domain) => `<div class="domain-dns-records">${(domain.dnsRecords || []).map((record) => `<section class="domain-dns-record" aria-label="${esc(record.type)} record"><header><h3 aria-label="Record Type: ${esc(record.type)}">${esc(record.type)} record</h3><span class="domain-state state-${esc(record.currentStatus)}" aria-label="Current Status: ${esc(record.currentStatus)}">${esc(record.currentStatus)}</span></header><div class="domain-dns-fields"><div><strong>Host / Name</strong><code>${esc(record.host)}</code><button class="secondary copy-domain-value" data-copy="${esc(record.host)}" type="button" aria-label="Copy ${esc(record.type)} host">Copy host</button></div><div><strong>Required Value</strong><code>${esc(record.requiredValue)}</code><button class="secondary copy-domain-value" data-copy="${esc(record.requiredValue)}" type="button" aria-label="Copy ${esc(record.type)} value">Copy value</button></div></div><p class="domain-dns-detected"><strong>Detected Value</strong><code>${esc(record.detectedValue || "Not detected")}</code></p></section>`).join("")}</div>`;
-  const wireCopies = () =>
-    modalContent.querySelectorAll(".copy-domain-value").forEach(
+  const recordTable = (domain) => `<div class="domain-dns-help"><strong>In your DNS provider, add exactly these records.</strong><span>If the provider appends your domain automatically, enter only the left part of Host / Name. For example, for <code>_commera2.shop.example.com</code> under <code>example.com</code>, enter <code>_commera2.shop</code>.</span></div><div class="domain-dns-records">${(domain.dnsRecords || []).map((record) => `<section class="domain-dns-record" aria-label="${esc(record.type)} record"><header><h3 aria-label="Record Type: ${esc(record.type)}">${esc(record.type)} record</h3><span class="domain-state state-${esc(record.currentStatus)}" aria-label="Current Status: ${esc(record.currentStatus)}">${esc(record.currentStatus)}</span></header><div class="domain-dns-fields"><div><strong>Host / Name</strong><code>${esc(record.host)}</code><button class="secondary copy-domain-value" data-copy="${esc(record.host)}" type="button" aria-label="Copy ${esc(record.type)} host">Copy host</button></div><div><strong>Required Value</strong><code>${esc(record.requiredValue)}</code><button class="secondary copy-domain-value" data-copy="${esc(record.requiredValue)}" type="button" aria-label="Copy ${esc(record.type)} value">Copy value</button></div></div><p class="domain-dns-detected"><strong>Detected Value</strong><code>${esc(record.detectedValue || "Not detected")}</code></p></section>`).join("")}</div>`;
+  const wireCopies = (root = modalContent) =>
+    root.querySelectorAll(".copy-domain-value").forEach(
       (button) =>
         (button.onclick = async () => {
           const label = button.textContent;
@@ -3765,6 +3771,7 @@ function domainsView() {
           }
         }),
     );
+  wireCopies(content);
   const showWizard = (domain = null, step = 1) => {
     if (!overview.hostingConfigured) {
       modalContent.innerHTML = '<div class="domain-wizard"><h2>Platform hosting is not configured</h2><p>Contact the platform administrator to enable custom domains.</p><div class="wizard-actions"><button type="button" class="secondary" id="domain-hosting-close">Close</button></div></div>';
@@ -3778,7 +3785,7 @@ function domainsView() {
       const labels = ["Enter Domain", "Configure DNS", "Verify Ownership", "Activate SSL", "Domain Active"],
         steps = `<ol class="domain-wizard-steps">${labels.map((label, index) => `<li class="${index + 1 === activeStep ? "active" : index + 1 < activeStep ? "complete" : ""}"><b>${index + 1}</b><span>${label}</span></li>`).join("")}</ol>`;
       if (activeStep === 1) {
-        modalContent.innerHTML = `<div class="domain-wizard"><span class="eyebrow">Step 1 of 5</span><h2>Connect Domain</h2>${steps}<p>Enter the existing domain you want customers to use.</p><label class="field">Domain Name<input name="domainName" placeholder="example.com" autocomplete="url" required></label><p class="helper-text">Enter only the hostname. A simple https:// prefix will be normalized.</p><div class="wizard-actions"><button class="secondary" id="domain-cancel" type="button">Cancel</button><button class="primary" type="submit">Continue</button></div></div>`;
+        modalContent.innerHTML = `<div class="domain-wizard"><span class="eyebrow">Advanced setup</span><h2>Connect Custom Domain</h2>${steps}<div class="domain-dns-help"><strong>Before continuing, confirm your DNS provider supports CNAME and custom TXT records.</strong><span>InfinityFree SPF-only TXT records are not enough. For easiest testing, use the store link instead: <code>${esc(defaultStoreUrl)}</code>.</span></div><p>Enter the exact hostname customers should use, for example <strong>shop.example.com</strong>.</p><label class="field">Domain Name<input name="domainName" placeholder="shop.example.com" autocomplete="url" required></label><p class="helper-text">Enter only the hostname. Do not repeat the provider suffix if your DNS panel appends it automatically.</p><div class="wizard-actions"><button class="secondary" id="domain-cancel" type="button">Cancel</button><button class="primary" type="submit">Continue</button></div></div>`;
         $("#domain-cancel").onclick = () => modal.close();
         $("#modal-form").onsubmit = async (event) => {
           event.preventDefault();
@@ -3796,7 +3803,7 @@ function domainsView() {
           }
         };
       } else if (activeStep === 2) {
-        modalContent.innerHTML = `<div class="domain-wizard"><span class="eyebrow">Step 2 of 5</span><h2>Configure DNS</h2>${steps}<p>Add these DNS records at your domain provider. Values are generated for <strong>${esc(current.domainName)}</strong>.</p>${recordTable(current)}<div class="wizard-actions"><button class="secondary" id="domain-done-later" type="button">Finish Later</button><button class="primary" id="domain-check" type="button">Check Connection</button></div></div>`;
+        modalContent.innerHTML = `<div class="domain-wizard"><span class="eyebrow">Step 2 of 5</span><h2>Configure DNS</h2>${steps}<p>Add these DNS records at your domain provider for <strong>${esc(current.domainName)}</strong>.</p>${recordTable(current)}<p class="helper-text">If your DNS provider only offers SPF records, it cannot verify this domain. Use a provider with normal TXT records or keep using the store link.</p><div class="wizard-actions"><button class="secondary" id="domain-done-later" type="button">Finish Later</button><button class="primary" id="domain-check" type="button">Check Connection</button></div></div>`;
         wireCopies();
         $("#domain-done-later").onclick = async () => {
           modal.close();
