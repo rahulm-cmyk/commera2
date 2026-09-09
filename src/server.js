@@ -3410,6 +3410,18 @@ export function createApp({
           }
         }
       }
+      match = path.match(/^\/s\/([^/]+)(\/.*)?$/);
+      if (match && ["GET", "HEAD"].includes(req.method)) {
+        const storeSlug = decodeURIComponent(match[1]),
+          activeDomain = domains.activeDomainForStoreSlug(storeSlug);
+        if (activeDomain?.openUrl) {
+          res.writeHead(308, {
+            location: `${activeDomain.openUrl}${match[2] || "/"}${url.search}`,
+            "cache-control": "public, max-age=300",
+          });
+          return res.end();
+        }
+      }
       match = path.match(/^\/s\/([^/]+)\/checkout\/([^/]+)$/);
       if (match && req.method === "GET") {
         const storeSlug = decodeURIComponent(match[1]), sessionId = decodeURIComponent(match[2]);

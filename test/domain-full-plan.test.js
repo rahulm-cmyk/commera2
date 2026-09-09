@@ -288,6 +288,17 @@ test("primary host serves product, checkout, policy and correct pixel while seco
 
   let hosted = await withHost(
     base,
+    "commera2.test",
+    "/s/routing/products/offer?utm_source=ad",
+  );
+  assert.equal(hosted.status, 308);
+  assert.equal(
+    hosted.headers.location,
+    "https://shop.routing.example/products/offer?utm_source=ad",
+  );
+
+  hosted = await withHost(
+    base,
     "old.routing.example",
     "/products/offer?utm_source=ad",
   );

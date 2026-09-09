@@ -299,6 +299,20 @@ export class DomainService {
       .map((value) => this.#output(value));
   }
 
+  activeDomainForStoreSlug(storeSlug) {
+    const value = row(
+      this.db
+        .prepare(
+          `SELECT cd.* FROM custom_domains cd
+           JOIN stores s ON s.id=cd.store_id
+           WHERE s.slug=? AND cd.overall_status='ACTIVE'
+           ORDER BY cd.primary_domain DESC,cd.id DESC LIMIT 1`,
+        )
+        .get(clean(storeSlug)),
+    );
+    return this.#output(value);
+  }
+
   getDomainInstructions(storeId, id) {
     this.requireHosting();
     const domain = this.getDomain(storeId, id);
