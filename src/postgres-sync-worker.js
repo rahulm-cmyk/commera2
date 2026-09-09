@@ -25,6 +25,7 @@ function dialect(input){
     .replace(/^BEGIN\s+IMMEDIATE$/i,'BEGIN')
     .replace(/datetime\('now','-1 hour'\)/gi,"CURRENT_TIMESTAMP - INTERVAL '1 hour'")
     .replace(/datetime\('now','-24 hours'\)/gi,"CURRENT_TIMESTAMP - INTERVAL '24 hours'")
+    .replace(/\(julianday\(([^)]+)\)\s*-\s*julianday\(([^)]+)\)\)\s*\*\s*86400/gi,"EXTRACT(EPOCH FROM ($1::timestamp - $2::timestamp))")
     .replace(/\bcreated_at\s*>=\s*(CURRENT_TIMESTAMP\s*-\s*INTERVAL\s*'[^']+')/gi,'created_at::timestamp >= $1')
     .replace(/GROUP_CONCAT\(quantity \|\| '× ' \|\| name, ', '\)/gi,"STRING_AGG(quantity::text || '× ' || name, ', ')");
   if(ignored)sql+=' ON CONFLICT DO NOTHING';
