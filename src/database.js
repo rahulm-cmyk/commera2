@@ -19,6 +19,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       throw new Error("DATABASE_URL is required when DATABASE_MODE=postgres");
     if (databaseMode !== "sqlite" && process.env.DATABASE_URL) {
       const db = new PostgresSyncDatabase(process.env.DATABASE_URL);
+      db.__commera2DatabaseMode = "postgres";
+      db.__commera2Persistent = true;
       const legacyPageKind = ["page", "type"].join("_");
       const legacyDestination = ["destination", "slug"].join("_");
       db.exec(`DO $$
@@ -358,6 +360,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
   if (filename !== ":memory:")
     mkdirSync(dirname(filename), { recursive: true });
   const db = new DatabaseSync(filename);
+  db.__commera2DatabaseMode = "sqlite";
+  db.__commera2Persistent = filename !== ":memory:" && process.env.NODE_ENV !== "production";
   db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
   db.exec(`
     CREATE TABLE IF NOT EXISTS stores (

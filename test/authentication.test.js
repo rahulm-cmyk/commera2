@@ -158,8 +158,14 @@ test("authentication is rate limited and health probes do not expose data", asyn
   assert.ok(Number(result.response.headers.get("retry-after")) > 0);
 
   result = await request(base, "/healthz");
-  assert.deepEqual(result.body, { status: "ok" });
+  assert.deepEqual(result.body, {
+    status: "ok",
+    database: { mode: "sqlite", persistent: false },
+  });
   assert.equal(result.response.headers.get("x-content-type-options"), "nosniff");
   result = await request(base, "/readyz");
-  assert.deepEqual(result.body, { status: "ready" });
+  assert.deepEqual(result.body, {
+    status: "ready",
+    database: { mode: "sqlite", persistent: false },
+  });
 });

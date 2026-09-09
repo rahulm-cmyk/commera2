@@ -81,6 +81,25 @@ The migration refuses to overwrite a non-empty PostgreSQL schema.
 `DATABASE_MODE=auto` selects PostgreSQL when `DATABASE_URL` is present and SQLite
 otherwise. Tests that explicitly request an in-memory database continue to use SQLite.
 
+## Render persistence
+
+Do not use SQLite for a real Render deployment. A free Render web service can
+restart or redeploy with temporary filesystem state, so stores, products, pages,
+orders, and settings can disappear. For testing that must survive refreshes,
+restarts, and deploys, create a PostgreSQL database and set these Render
+environment variables:
+
+```bash
+DATABASE_MODE=postgres
+DATABASE_URL=postgresql://...
+```
+
+After redeploy, open `/healthz` or `/readyz`. A safe deploy reports:
+
+```json
+{"database":{"mode":"postgres","persistent":true}}
+```
+
 ## Custom domains
 
 Settings → Domain supports existing-domain connection, per-record DNS and ownership

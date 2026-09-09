@@ -1127,10 +1127,22 @@ export function createApp({
       }
       const sessionToken = cookies(req).commera2_session || "";
       if (path === "/healthz" && req.method === "GET")
-        return json(res, 200, { status: "ok" });
+        return json(res, 200, {
+          status: "ok",
+          database: {
+            mode: db.__commera2DatabaseMode || "unknown",
+            persistent: Boolean(db.__commera2Persistent),
+          },
+        });
       if (path === "/readyz" && req.method === "GET") {
         db.prepare("SELECT 1 ok").get();
-        return json(res, 200, { status: "ready" });
+        return json(res, 200, {
+          status: "ready",
+          database: {
+            mode: db.__commera2DatabaseMode || "unknown",
+            persistent: Boolean(db.__commera2Persistent),
+          },
+        });
       }
       if (path === "/api/auth/register" && req.method === "POST") {
         if (!merchantAuth)
