@@ -1,0 +1,1514 @@
+import { DatabaseSync } from "node:sqlite";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
+import { existsSync } from "node:fs";
+import { PostgresSyncDatabase } from "./postgres-sync-database.js";
+import { migrateSubscriptionPolicy } from './policy-migrations.js';
+import { backfillLegacyOrderSubtotals } from './order-migrations.js';
+
+export function createDatabase(filename = "data/commera2.sqlite") {
+  if (filename !== ":memory:") {
+    if (existsSync(".env")) process.loadEnvFile(".env");
+    if (existsSync(".env.otp")) process.loadEnvFile(".env.otp");
+    const databaseMode = String(process.env.DATABASE_MODE || "auto")
+      .trim()
+      .toLowerCase();
+    if (!["auto", "postgres", "sqlite"].includes(databaseMode))
+      throw new Error("DATABASE_MODE must be auto, postgres, or sqlite");
+    if (databaseMode === "postgres" && !process.env.DATABASE_URL)
+      throw new Error("DATABASE_URL is required when DATABASE_MODE=postgres");
+    if (databaseMode !== "sqlite" && process.env.DATABASE_URL) {
+      const db = new PostgresSyncDatabase(process.env.DATABASE_URL);
+      const legacyPageKind = ["page", "type"].join("_");
+      const legacyDestination = ["destination", "slug"].join("_");
+      db.exec(`DO $$
+        BEGIN
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product_pages' AND column_name='${legacyPageKind}') THEN
+            EXECUTE 'DELETE FROM product_pages WHERE ${legacyPageKind} <> ''product''';
+            EXECUTE 'ALTER TABLE product_pages DROP COLUMN ${legacyPageKind}';
+          END IF;
+          IF EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product_pages' AND column_name='${legacyDestination}') THEN
+            EXECUTE 'ALTER TABLE product_pages DROP COLUMN ${legacyDestination}';
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='stores' AND column_name='currency') THEN
+            EXECUTE 'ALTER TABLE stores ADD COLUMN currency TEXT NOT NULL DEFAULT ''INR''';
+          END IF;
+          IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product_pages' AND column_name='deleted_at') THEN
+            EXECUTE 'ALTER TABLE product_pages ADD COLUMN deleted_at TEXT';
+          END IF;
+        END $$`);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS live_visitor_sessions (
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL,
+          product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          page_id INTEGER NOT NULL REFERENCES product_pages(id) ON DELETE CASCADE,
+          page_slug TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'viewing_product',
+          quantity INTEGER NOT NULL DEFAULT 1, bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL,
+          cart_value_paise INTEGER NOT NULL DEFAULT 0, checkout_session_id TEXT REFERENCES checkout_sessions(id) ON DELETE SET NULL,
+          checkout_progress TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL DEFAULT '', device_type TEXT NOT NULL DEFAULT 'Unknown', is_bot INTEGER NOT NULL DEFAULT 0,
+          started_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, checkout_started_at TIMESTAMP,
+          last_activity_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(store_id,session_id)
+        );
+        CREATE TABLE IF NOT EXISTS live_visitor_events (
+          event_id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          session_id TEXT NOT NULL, event_name TEXT NOT NULL,
+          product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+          page_id INTEGER NOT NULL REFERENCES product_pages(id) ON DELETE CASCADE,
+          quantity INTEGER NOT NULL DEFAULT 1, bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL,
+          cart_value_paise INTEGER NOT NULL DEFAULT 0, checkout_session_id TEXT,
+          checkout_progress TEXT NOT NULL DEFAULT '', event_index INTEGER NOT NULL DEFAULT 1,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS otp_verifications (
+          id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          checkout_session_id TEXT NOT NULL REFERENCES checkout_sessions(id) ON DELETE CASCADE,
+          phone TEXT NOT NULL, otp_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'OTP_SENT',
+          attempt_count INTEGER NOT NULL DEFAULT 0, resend_count INTEGER NOT NULL DEFAULT 0,
+          last_sent_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TIMESTAMP NOT NULL,
+          verified_at TIMESTAMP, created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS cod_bot_attempts (
+          id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          visitor_session_id TEXT NOT NULL DEFAULT '', checkout_session_id TEXT,
+          phone TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL DEFAULT '',
+          risk_score INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', action TEXT NOT NULL DEFAULT 'allow',
+          signals_json TEXT NOT NULL DEFAULT '[]', blocked INTEGER NOT NULL DEFAULT 0,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS exit_offers (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('active','draft','disabled')),
+          discount_type TEXT NOT NULL CHECK(discount_type IN ('percent','fixed')),
+          discount_value INTEGER NOT NULL CHECK(discount_value > 0),
+          headline TEXT NOT NULL, message TEXT NOT NULL DEFAULT '',
+          button_text TEXT NOT NULL, reject_text TEXT NOT NULL,
+          trigger_exit_intent INTEGER NOT NULL DEFAULT 1, trigger_back INTEGER NOT NULL DEFAULT 1,
+          trigger_inactivity INTEGER NOT NULL DEFAULT 1, trigger_mouse_leave INTEGER NOT NULL DEFAULT 1,
+          inactivity_seconds INTEGER NOT NULL DEFAULT 30 CHECK(inactivity_seconds BETWEEN 5 AND 600),
+          target_type TEXT NOT NULL DEFAULT 'all_products' CHECK(target_type IN ('all_products','specific_product','specific_page')),
+          target_product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+          target_page_id INTEGER REFERENCES product_pages(id) ON DELETE CASCADE,
+          show_product_page INTEGER NOT NULL DEFAULT 1, show_checkout INTEGER NOT NULL DEFAULT 1,
+          max_shows_per_session INTEGER NOT NULL DEFAULT 1 CHECK(max_shows_per_session BETWEEN 1 AND 5),
+          dismissal_scope TEXT NOT NULL DEFAULT 'current_session' CHECK(dismissal_scope IN ('current_session')),
+          combination_rule TEXT NOT NULL DEFAULT 'better_discount' CHECK(combination_rule IN ('better_discount','replace_coupon','no_coupon','allow_combination')),
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS exit_offer_interactions (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          exit_offer_id INTEGER NOT NULL REFERENCES exit_offers(id) ON DELETE CASCADE,
+          session_key TEXT NOT NULL, visitor_session_id TEXT NOT NULL DEFAULT '',
+          checkout_session_id TEXT REFERENCES checkout_sessions(id) ON DELETE SET NULL,
+          order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+          status TEXT NOT NULL DEFAULT 'SHOWN' CHECK(status IN ('SHOWN','CLAIMED','REJECTED','CONVERTED')),
+          show_count INTEGER NOT NULL DEFAULT 1, discount_paise INTEGER NOT NULL DEFAULT 0,
+          original_total_paise INTEGER NOT NULL DEFAULT 0, final_total_paise INTEGER NOT NULL DEFAULT 0,
+          shown_at TIMESTAMP, claimed_at TIMESTAMP, rejected_at TIMESTAMP, converted_at TIMESTAMP,
+          created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(store_id,exit_offer_id,session_key)
+        );
+        CREATE INDEX IF NOT EXISTS idx_live_visitors_store_activity ON live_visitor_sessions(store_id,last_activity_at);
+        CREATE INDEX IF NOT EXISTS idx_live_visitor_events_session ON live_visitor_events(store_id,session_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_otp_checkout_phone ON otp_verifications(store_id,checkout_session_id,phone,created_at);
+        CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_ip ON cod_bot_attempts(store_id,ip_address,created_at);
+        CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_device ON cod_bot_attempts(store_id,device_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_exit_offers_store_status ON exit_offers(store_id,status,updated_at);
+        CREATE INDEX IF NOT EXISTS idx_exit_offer_interactions_offer ON exit_offer_interactions(store_id,exit_offer_id,status,created_at);
+        ALTER TABLE live_visitor_events ADD COLUMN IF NOT EXISTS event_index INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE live_visitor_sessions ADD COLUMN IF NOT EXISTS device_type TEXT NOT NULL DEFAULT 'Unknown';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS phone_verification_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS otp_required INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS device_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS bot_risk_score INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS bot_risk_level TEXT NOT NULL DEFAULT 'low';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS bot_action TEXT NOT NULL DEFAULT 'allow';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS behavior_json TEXT NOT NULL DEFAULT '{}';
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS checkout_token_valid INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS exit_offer_id INTEGER REFERENCES exit_offers(id) ON DELETE SET NULL;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS exit_offer_discount_paise INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS exit_offer_claimed_at TIMESTAMP;
+        ALTER TABLE checkout_sessions ADD COLUMN IF NOT EXISTS gift_card_code TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone_verification_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS phone_verified_at TIMESTAMP;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS bot_risk_score INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS bot_risk_level TEXT NOT NULL DEFAULT 'low';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS archived_at TIMESTAMP;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS fulfilled_at TIMESTAMP;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS reversal_paise INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS return_status TEXT NOT NULL DEFAULT '';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'customer';
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_code TEXT;
+        ALTER TABLE orders ADD COLUMN IF NOT EXISTS gift_card_applied_paise INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE order_events ADD COLUMN IF NOT EXISTS source TEXT NOT NULL DEFAULT 'system';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS normalized_hostname TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS domain_type TEXT NOT NULL DEFAULT 'custom';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS ownership_status TEXT NOT NULL DEFAULT 'pending';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS ownership_verification_method TEXT NOT NULL DEFAULT 'dns_txt';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS dns_status TEXT NOT NULL DEFAULT 'not_configured';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS ssl_status TEXT NOT NULL DEFAULT 'not_started';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS routing_status TEXT NOT NULL DEFAULT 'pending';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS overall_status TEXT NOT NULL DEFAULT 'PENDING_CONFIGURATION';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS provider TEXT NOT NULL DEFAULT 'manual';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS provider_hostname_id TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS detected_cname TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS detected_txt TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS error_code TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS error_message TEXT NOT NULL DEFAULT '';
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS last_checked_at TIMESTAMP;
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS ownership_verified_at TIMESTAMP;
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS activated_at TIMESTAMP;
+        ALTER TABLE custom_domains ADD COLUMN IF NOT EXISTS disconnected_at TIMESTAMP;
+        UPDATE custom_domains SET normalized_hostname=LOWER(domain_name) WHERE normalized_hostname='';
+        CREATE TABLE IF NOT EXISTS domain_audit_log (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          domain_id INTEGER REFERENCES custom_domains(id) ON DELETE SET NULL,
+          actor TEXT NOT NULL DEFAULT 'merchant', action TEXT NOT NULL,
+          details_json TEXT NOT NULL DEFAULT '{}', created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_custom_domains_status ON custom_domains(overall_status,last_checked_at);
+        CREATE INDEX IF NOT EXISTS idx_domain_audit_store ON domain_audit_log(store_id,created_at);
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS merchant_users (
+          id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+          display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+          active INTEGER NOT NULL DEFAULT 1,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS store_memberships (
+          user_id TEXT NOT NULL REFERENCES merchant_users(id) ON DELETE CASCADE,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          role TEXT NOT NULL DEFAULT 'owner',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          PRIMARY KEY(user_id,store_id)
+        );
+        CREATE TABLE IF NOT EXISTS merchant_sessions (
+          id TEXT PRIMARY KEY,
+          user_id TEXT NOT NULL REFERENCES merchant_users(id) ON DELETE CASCADE,
+          token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL,
+          expires_at TEXT NOT NULL,
+          last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_store_memberships_store ON store_memberships(store_id,user_id);
+        CREATE INDEX IF NOT EXISTS idx_merchant_sessions_token ON merchant_sessions(token_hash);
+        CREATE INDEX IF NOT EXISTS idx_merchant_sessions_expiry ON merchant_sessions(expires_at);
+        CREATE TABLE IF NOT EXISTS order_events (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+          event_type TEXT NOT NULL, old_status TEXT NOT NULL DEFAULT '',
+          new_status TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(store_id,order_id,id);
+        CREATE TABLE IF NOT EXISTS draft_orders (
+          id BIGSERIAL PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          customer_id INTEGER REFERENCES customers(id), customer_name TEXT NOT NULL, customer_phone TEXT NOT NULL,
+          customer_email TEXT NOT NULL DEFAULT '', customer_address TEXT NOT NULL DEFAULT '', customer_city TEXT NOT NULL DEFAULT '', customer_state TEXT NOT NULL DEFAULT '', customer_country TEXT NOT NULL DEFAULT '', customer_pincode TEXT NOT NULL DEFAULT '',
+          discount_paise INTEGER NOT NULL DEFAULT 0, shipping_paise INTEGER NOT NULL DEFAULT 0, shipping_method TEXT NOT NULL DEFAULT '', payment_method TEXT NOT NULL DEFAULT 'cod', note TEXT NOT NULL DEFAULT '',
+          status TEXT NOT NULL DEFAULT 'draft', converted_order_id INTEGER REFERENCES orders(id), created_by TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS draft_order_items (
+          id BIGSERIAL PRIMARY KEY, draft_id INTEGER NOT NULL REFERENCES draft_orders(id) ON DELETE CASCADE,
+          product_id INTEGER NOT NULL REFERENCES products(id), name TEXT NOT NULL, quantity INTEGER NOT NULL, unit_price_paise INTEGER NOT NULL, line_total_paise INTEGER NOT NULL
+        );
+        CREATE TABLE IF NOT EXISTS order_table_preferences (
+          user_id TEXT NOT NULL, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          column_order_json TEXT NOT NULL DEFAULT '[]', visible_columns_json TEXT NOT NULL DEFAULT '[]', sort_field TEXT NOT NULL DEFAULT 'date', sort_direction TEXT NOT NULL DEFAULT 'desc', hide_archived INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,store_id)
+        );
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS pixel_connections (
+          id BIGSERIAL PRIMARY KEY,
+          legacy_pixel_id INTEGER UNIQUE,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          platform TEXT NOT NULL,
+          name TEXT NOT NULL,
+          tracking_id TEXT NOT NULL,
+          browser_enabled INTEGER NOT NULL DEFAULT 1,
+          server_enabled INTEGER NOT NULL DEFAULT 0,
+          enabled INTEGER NOT NULL DEFAULT 0,
+          status TEXT NOT NULL DEFAULT 'configured',
+          credentials_json TEXT NOT NULL DEFAULT '',
+          scope_type TEXT NOT NULL DEFAULT 'entire_store',
+          scope_ids_json TEXT NOT NULL DEFAULT '[]',
+          verified_at TEXT,
+          last_error TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE TABLE IF NOT EXISTS tracking_events (
+          id TEXT PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          event_id TEXT NOT NULL,
+          event_name TEXT NOT NULL,
+          source TEXT NOT NULL,
+          session_id TEXT NOT NULL DEFAULT '',
+          page_id INTEGER REFERENCES product_pages(id) ON DELETE SET NULL,
+          product_id INTEGER REFERENCES products(id) ON DELETE SET NULL,
+          checkout_session_id TEXT,
+          order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+          page_slug TEXT NOT NULL DEFAULT '',
+          payload_json TEXT NOT NULL DEFAULT '{}',
+          consent_granted INTEGER NOT NULL DEFAULT 0,
+          is_bot INTEGER NOT NULL DEFAULT 0,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(store_id,event_id,event_name)
+        );
+        CREATE TABLE IF NOT EXISTS pixel_event_mappings (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          pixel_connection_id INTEGER NOT NULL REFERENCES pixel_connections(id) ON DELETE CASCADE,
+          internal_event TEXT NOT NULL,
+          provider_event_name TEXT NOT NULL,
+          enabled INTEGER NOT NULL DEFAULT 1,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(pixel_connection_id,internal_event)
+        );
+        CREATE TABLE IF NOT EXISTS pixel_event_deliveries (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          tracking_event_id TEXT NOT NULL REFERENCES tracking_events(id) ON DELETE CASCADE,
+          pixel_connection_id INTEGER NOT NULL REFERENCES pixel_connections(id) ON DELETE CASCADE,
+          channel TEXT NOT NULL,
+          provider_event_name TEXT NOT NULL,
+          status TEXT NOT NULL DEFAULT 'queued',
+          error TEXT NOT NULL DEFAULT '',
+          attempts INTEGER NOT NULL DEFAULT 0,
+          sent_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(tracking_event_id,pixel_connection_id,channel)
+        );
+        CREATE INDEX IF NOT EXISTS idx_pixel_connections_store ON pixel_connections(store_id,enabled,status);
+        CREATE INDEX IF NOT EXISTS idx_tracking_events_store ON tracking_events(store_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_tracking_events_session ON tracking_events(store_id,session_id,created_at);
+        CREATE INDEX IF NOT EXISTS idx_pixel_deliveries_store ON pixel_event_deliveries(store_id,status,created_at);
+        CREATE INDEX IF NOT EXISTS idx_pixel_deliveries_connection ON pixel_event_deliveries(pixel_connection_id,created_at);
+        CREATE TABLE IF NOT EXISTS otp_provider_connections (
+          store_id BIGINT PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+          provider TEXT NOT NULL DEFAULT 'twilio', region TEXT NOT NULL DEFAULT 'US1',
+          account_identifier TEXT NOT NULL DEFAULT '', service_identifier TEXT NOT NULL DEFAULT '',
+          credentials_json TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'not_connected',
+          verified_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+        );
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS name TEXT NOT NULL DEFAULT '';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'active';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS trigger_type TEXT NOT NULL DEFAULT 'specific_product';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS trigger_collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS trigger_bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS minimum_order_paise INTEGER;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS maximum_order_paise INTEGER;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS quantity INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS headline TEXT NOT NULL DEFAULT 'Special Offer';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS subheadline TEXT NOT NULL DEFAULT 'Add this to your existing order';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS description TEXT NOT NULL DEFAULT '';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS use_product_media INTEGER NOT NULL DEFAULT 1;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS accept_button_text TEXT NOT NULL DEFAULT 'Add To My Order';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS reject_button_text TEXT NOT NULL DEFAULT 'No thanks, continue';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS accept_action TEXT NOT NULL DEFAULT 'thank_you';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS reject_action TEXT NOT NULL DEFAULT 'thank_you';
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS allow_existing_product INTEGER NOT NULL DEFAULT 0;
+        ALTER TABLE product_upsells ADD COLUMN IF NOT EXISTS updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP;
+        UPDATE product_upsells SET name=title WHERE name='';
+        UPDATE product_upsells SET status=CASE WHEN active=1 THEN 'active' ELSE 'disabled' END WHERE status='' OR status IS NULL;
+        CREATE TABLE IF NOT EXISTS order_upsell_events (
+          id BIGSERIAL PRIMARY KEY,
+          store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+          order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+          checkout_session_id TEXT NOT NULL REFERENCES checkout_sessions(id) ON DELETE CASCADE,
+          upsell_id INTEGER NOT NULL REFERENCES product_upsells(id) ON DELETE RESTRICT,
+          status TEXT NOT NULL DEFAULT 'NOT_SHOWN',
+          token_hash TEXT NOT NULL,
+          base_order_total INTEGER NOT NULL DEFAULT 0,
+          upsell_value INTEGER NOT NULL DEFAULT 0,
+          final_order_total INTEGER NOT NULL DEFAULT 0,
+          shown_at TEXT, accepted_at TEXT, rejected_at TEXT, failed_at TEXT,
+          created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          UNIQUE(store_id,order_id,upsell_id)
+        );
+        CREATE INDEX IF NOT EXISTS idx_order_upsell_status ON order_upsell_events(store_id,status,created_at);
+        CREATE INDEX IF NOT EXISTS idx_order_upsell_checkout ON order_upsell_events(checkout_session_id);
+      `);
+      db.exec("ALTER TABLE product_pages ADD COLUMN IF NOT EXISTS draft_json TEXT");
+      db.exec(`DO $$ DECLARE policy_check RECORD; BEGIN
+        FOR policy_check IN SELECT conname FROM pg_constraint WHERE conrelid='store_policies'::regclass AND contype='c' AND pg_get_constraintdef(oid) LIKE '%policy_type%'
+        LOOP EXECUTE format('ALTER TABLE store_policies DROP CONSTRAINT %I', policy_check.conname); END LOOP;
+        ALTER TABLE store_policies ADD CONSTRAINT store_policies_policy_type_check CHECK (policy_type IN ('return-refund','privacy','terms','shipping','contact','legal','subscription'));
+      END $$;`);
+      backfillLegacyOrderSubtotals(db);
+      return db;
+    }
+  }
+  if (filename !== ":memory:")
+    mkdirSync(dirname(filename), { recursive: true });
+  const db = new DatabaseSync(filename);
+  db.exec("PRAGMA foreign_keys = ON; PRAGMA journal_mode = WAL;");
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS stores (
+      id INTEGER PRIMARY KEY, name TEXT NOT NULL, slug TEXT NOT NULL UNIQUE,
+      currency TEXT NOT NULL DEFAULT 'INR',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS merchant_users (
+      id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
+      display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+      active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS store_memberships (
+      user_id TEXT NOT NULL REFERENCES merchant_users(id) ON DELETE CASCADE,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      role TEXT NOT NULL DEFAULT 'owner',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(user_id,store_id)
+    );
+    CREATE TABLE IF NOT EXISTS merchant_sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES merchant_users(id) ON DELETE CASCADE,
+      token_hash TEXT NOT NULL UNIQUE, csrf_token TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      last_seen_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS policy_default_rules (
+      store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+      allow_returns INTEGER NOT NULL DEFAULT 0,
+      return_window_days INTEGER NOT NULL DEFAULT 0,
+      allow_cancellation INTEGER NOT NULL DEFAULT 1,
+      cancellation_until TEXT NOT NULL DEFAULT 'before_fulfillment',
+      cancellation_window_hours INTEGER NOT NULL DEFAULT 0,
+      return_shipping_fee_paise INTEGER NOT NULL DEFAULT 0,
+      restocking_charge_paise INTEGER NOT NULL DEFAULT 0,
+      cod_orders_eligible INTEGER NOT NULL DEFAULT 1,
+      delivered_orders_eligible INTEGER NOT NULL DEFAULT 1,
+      damaged_product_return INTEGER NOT NULL DEFAULT 1,
+      wrong_product_return INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS policy_rules (
+      id INTEGER PRIMARY KEY,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      rule_name TEXT NOT NULL,
+      applies_to TEXT NOT NULL CHECK(applies_to IN ('all_products','product','collection')),
+      target_id INTEGER,
+      return_allowed INTEGER NOT NULL DEFAULT 0,
+      return_days INTEGER NOT NULL DEFAULT 0,
+      return_condition TEXT NOT NULL DEFAULT 'standard' CHECK(return_condition IN ('standard','damaged_only','wrong_or_damaged')),
+      cancellation_allowed INTEGER NOT NULL DEFAULT 0,
+      cancellation_until TEXT NOT NULL DEFAULT 'before_fulfillment',
+      cancellation_window_hours INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','inactive')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS store_policies (
+      id INTEGER PRIMARY KEY,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      policy_type TEXT NOT NULL CHECK(policy_type IN ('return-refund','privacy','terms','shipping','contact','legal','subscription')),
+      title TEXT NOT NULL,
+      content_html TEXT NOT NULL DEFAULT '',
+      details_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      published_at TEXT,
+      UNIQUE(store_id,policy_type)
+    );
+    CREATE TABLE IF NOT EXISTS review_imports (
+      id INTEGER PRIMARY KEY,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'validated',
+      status_mode TEXT NOT NULL DEFAULT 'use_csv',
+      total_rows INTEGER NOT NULL DEFAULT 0,
+      valid_rows INTEGER NOT NULL DEFAULT 0,
+      warning_rows INTEGER NOT NULL DEFAULT 0,
+      error_rows INTEGER NOT NULL DEFAULT 0,
+      imported_count INTEGER NOT NULL DEFAULT 0,
+      failed_count INTEGER NOT NULL DEFAULT 0,
+      skipped_count INTEGER NOT NULL DEFAULT 0,
+      imported_by TEXT NOT NULL DEFAULT 'Merchant',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      completed_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS reviews (
+      id INTEGER PRIMARY KEY,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      customer_name TEXT NOT NULL,
+      rating INTEGER NOT NULL CHECK(rating BETWEEN 1 AND 5),
+      title TEXT NOT NULL DEFAULT '',
+      review_text TEXT NOT NULL,
+      source TEXT NOT NULL CHECK(source IN ('consumer','manual')),
+      status TEXT NOT NULL CHECK(status IN ('pending','approved','disapproved','draft')),
+      author_country TEXT NOT NULL DEFAULT '', author_email TEXT NOT NULL DEFAULT '',
+      merchant_reply TEXT NOT NULL DEFAULT '', reply_at TEXT,
+      verified_purchase INTEGER NOT NULL DEFAULT 0, verification_source TEXT NOT NULL DEFAULT '',
+      featured INTEGER NOT NULL DEFAULT 0, item_type TEXT NOT NULL DEFAULT 'review', video_url TEXT NOT NULL DEFAULT '',
+      import_batch_id INTEGER REFERENCES review_imports(id) ON DELETE SET NULL, import_row_number INTEGER,
+      review_date TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS review_images (
+      id INTEGER PRIMARY KEY,
+      review_id INTEGER NOT NULL REFERENCES reviews(id) ON DELETE CASCADE,
+      file_name TEXT NOT NULL DEFAULT '',
+      mime_type TEXT NOT NULL,
+      image_base64 TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS review_import_rows (
+      id INTEGER PRIMARY KEY,
+      import_id INTEGER NOT NULL REFERENCES review_imports(id) ON DELETE CASCADE,
+      row_number INTEGER NOT NULL,
+      raw_json TEXT NOT NULL,
+      normalized_json TEXT NOT NULL DEFAULT '{}',
+      status TEXT NOT NULL,
+      errors_json TEXT NOT NULL DEFAULT '[]',
+      warnings_json TEXT NOT NULL DEFAULT '[]',
+      review_id INTEGER REFERENCES reviews(id) ON DELETE SET NULL,
+      UNIQUE(import_id,row_number)
+    );
+    CREATE TABLE IF NOT EXISTS pincode_cache (
+      pincode TEXT PRIMARY KEY,
+      city TEXT NOT NULL,
+      state TEXT NOT NULL,
+      country TEXT NOT NULL DEFAULT 'India',
+      source TEXT NOT NULL DEFAULT '',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS store_settings (
+      store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+      cod_form_json TEXT NOT NULL DEFAULT '{}', checkout_json TEXT NOT NULL DEFAULT '{}',
+      shipping_json TEXT NOT NULL DEFAULT '{}', privacy_json TEXT NOT NULL DEFAULT '{}',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS otp_provider_connections (
+      store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+      provider TEXT NOT NULL DEFAULT 'twilio', region TEXT NOT NULL DEFAULT 'US1',
+      account_identifier TEXT NOT NULL DEFAULT '', service_identifier TEXT NOT NULL DEFAULT '',
+      credentials_json TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'not_connected',
+      verified_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS sales_channels (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      code TEXT NOT NULL, name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'not_connected',
+      account_identifier TEXT NOT NULL DEFAULT '', enabled INTEGER NOT NULL DEFAULT 0,
+      last_sync_at TEXT, last_error TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,code)
+    );
+    CREATE TABLE IF NOT EXISTS product_channel_availability (
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      channel_id INTEGER NOT NULL REFERENCES sales_channels(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      available INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(channel_id,product_id)
+    );
+    CREATE TABLE IF NOT EXISTS shipping_methods (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, charge_paise INTEGER NOT NULL CHECK(charge_paise>=0), enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,name)
+    );
+    CREATE TABLE IF NOT EXISTS shipping_zones (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, state TEXT NOT NULL, shipping_method_id INTEGER NOT NULL REFERENCES shipping_methods(id) ON DELETE CASCADE,
+      price_paise INTEGER NOT NULL CHECK(price_paise>=0), enabled INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,state,shipping_method_id)
+    );
+    CREATE TABLE IF NOT EXISTS products (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, slug TEXT NOT NULL, price_paise INTEGER NOT NULL CHECK(price_paise >= 0),
+      compare_price_paise INTEGER, description TEXT NOT NULL DEFAULT '',
+      stock INTEGER NOT NULL DEFAULT 0 CHECK(stock >= 0), active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(store_id, slug)
+    );
+    CREATE TABLE IF NOT EXISTS product_bundles (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, quantity INTEGER NOT NULL CHECK(quantity > 1),
+      price_paise INTEGER NOT NULL CHECK(price_paise >= 0), active INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS product_upsells (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      upsell_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      title TEXT NOT NULL, price_paise INTEGER NOT NULL CHECK(price_paise >= 0),
+      active INTEGER NOT NULL DEFAULT 1, name TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'active' CHECK(status IN ('active','draft','disabled')),
+      trigger_type TEXT NOT NULL DEFAULT 'specific_product' CHECK(trigger_type IN ('any_product','specific_product','specific_collection')),
+      trigger_collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL,
+      trigger_bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL,
+      minimum_order_paise INTEGER, maximum_order_paise INTEGER,
+      quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0),
+      headline TEXT NOT NULL DEFAULT 'Special Offer',
+      subheadline TEXT NOT NULL DEFAULT 'Add this to your existing order', description TEXT NOT NULL DEFAULT '',
+      use_product_media INTEGER NOT NULL DEFAULT 1,
+      accept_button_text TEXT NOT NULL DEFAULT 'Add To My Order',
+      reject_button_text TEXT NOT NULL DEFAULT 'No thanks, continue',
+      accept_action TEXT NOT NULL DEFAULT 'thank_you', reject_action TEXT NOT NULL DEFAULT 'thank_you',
+      allow_existing_product INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS exit_offers (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('active','draft','disabled')),
+      discount_type TEXT NOT NULL CHECK(discount_type IN ('percent','fixed')),
+      discount_value INTEGER NOT NULL CHECK(discount_value > 0),
+      headline TEXT NOT NULL, message TEXT NOT NULL DEFAULT '', button_text TEXT NOT NULL, reject_text TEXT NOT NULL,
+      trigger_exit_intent INTEGER NOT NULL DEFAULT 1, trigger_back INTEGER NOT NULL DEFAULT 1,
+      trigger_inactivity INTEGER NOT NULL DEFAULT 1, trigger_mouse_leave INTEGER NOT NULL DEFAULT 1,
+      inactivity_seconds INTEGER NOT NULL DEFAULT 30 CHECK(inactivity_seconds BETWEEN 5 AND 600),
+      target_type TEXT NOT NULL DEFAULT 'all_products' CHECK(target_type IN ('all_products','specific_product','specific_page')),
+      target_product_id INTEGER REFERENCES products(id) ON DELETE CASCADE,
+      target_page_id INTEGER REFERENCES product_pages(id) ON DELETE CASCADE,
+      show_product_page INTEGER NOT NULL DEFAULT 1, show_checkout INTEGER NOT NULL DEFAULT 1,
+      max_shows_per_session INTEGER NOT NULL DEFAULT 1 CHECK(max_shows_per_session BETWEEN 1 AND 5),
+      dismissal_scope TEXT NOT NULL DEFAULT 'current_session' CHECK(dismissal_scope IN ('current_session')),
+      combination_rule TEXT NOT NULL DEFAULT 'better_discount' CHECK(combination_rule IN ('better_discount','replace_coupon','no_coupon','allow_combination')),
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS product_downsells (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      downsell_product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      title TEXT NOT NULL, price_paise INTEGER NOT NULL CHECK(price_paise >= 0),
+      active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS discount_coupons (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      code TEXT NOT NULL, discount_type TEXT NOT NULL CHECK(discount_type IN ('percent','fixed')),
+      value INTEGER NOT NULL CHECK(value > 0), minimum_order_paise INTEGER NOT NULL DEFAULT 0 CHECK(minimum_order_paise >= 0),
+      usage_limit INTEGER CHECK(usage_limit IS NULL OR usage_limit > 0), used_count INTEGER NOT NULL DEFAULT 0,
+      active INTEGER NOT NULL DEFAULT 1, expires_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, code)
+    );
+    CREATE TABLE IF NOT EXISTS delivery_partners (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, code TEXT NOT NULL, tracking_url_template TEXT NOT NULL DEFAULT '',
+      connection_status TEXT NOT NULL DEFAULT 'not_connected', account_identifier TEXT NOT NULL DEFAULT '',
+      last_sync_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+      active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, code)
+    );
+    CREATE TABLE IF NOT EXISTS custom_domains (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      domain_name TEXT NOT NULL UNIQUE, normalized_hostname TEXT NOT NULL DEFAULT '',
+      domain_type TEXT NOT NULL DEFAULT 'custom', primary_domain INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'pending_verification', verification_token TEXT NOT NULL,
+      cname_target TEXT NOT NULL, txt_name TEXT NOT NULL, txt_value TEXT NOT NULL,
+      ownership_status TEXT NOT NULL DEFAULT 'pending', ownership_verification_method TEXT NOT NULL DEFAULT 'dns_txt',
+      dns_status TEXT NOT NULL DEFAULT 'not_configured', ssl_status TEXT NOT NULL DEFAULT 'not_started',
+      routing_status TEXT NOT NULL DEFAULT 'pending', overall_status TEXT NOT NULL DEFAULT 'PENDING_CONFIGURATION',
+      provider TEXT NOT NULL DEFAULT 'manual', provider_hostname_id TEXT NOT NULL DEFAULT '',
+      detected_cname TEXT NOT NULL DEFAULT '', detected_txt TEXT NOT NULL DEFAULT '',
+      error_code TEXT NOT NULL DEFAULT '', error_message TEXT NOT NULL DEFAULT '',
+      dns_checked_at TEXT, last_checked_at TEXT, verified_at TEXT, ownership_verified_at TEXT,
+      ssl_activated_at TEXT, activated_at TEXT, disconnected_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS domain_audit_log (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      domain_id INTEGER REFERENCES custom_domains(id) ON DELETE SET NULL,
+      actor TEXT NOT NULL DEFAULT 'merchant', action TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS tracking_pixels (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL DEFAULT '', platform TEXT NOT NULL, tracking_id TEXT NOT NULL, enabled INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'configured', verified_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,platform)
+    );
+    CREATE TABLE IF NOT EXISTS pixel_events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      pixel_id INTEGER NOT NULL REFERENCES tracking_pixels(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL, event_name TEXT NOT NULL, event_id TEXT NOT NULL DEFAULT '',
+      page_slug TEXT NOT NULL DEFAULT '', order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS pixel_connections (
+      id INTEGER PRIMARY KEY, legacy_pixel_id INTEGER UNIQUE,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      platform TEXT NOT NULL, name TEXT NOT NULL, tracking_id TEXT NOT NULL,
+      browser_enabled INTEGER NOT NULL DEFAULT 1, server_enabled INTEGER NOT NULL DEFAULT 0,
+      enabled INTEGER NOT NULL DEFAULT 0, status TEXT NOT NULL DEFAULT 'configured',
+      credentials_json TEXT NOT NULL DEFAULT '', scope_type TEXT NOT NULL DEFAULT 'entire_store',
+      scope_ids_json TEXT NOT NULL DEFAULT '[]', verified_at TEXT, last_error TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS tracking_events (
+      id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      event_id TEXT NOT NULL, event_name TEXT NOT NULL, source TEXT NOT NULL,
+      session_id TEXT NOT NULL DEFAULT '', page_id INTEGER REFERENCES product_pages(id) ON DELETE SET NULL,
+      product_id INTEGER REFERENCES products(id) ON DELETE SET NULL, checkout_session_id TEXT,
+      order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL, page_slug TEXT NOT NULL DEFAULT '',
+      payload_json TEXT NOT NULL DEFAULT '{}', consent_granted INTEGER NOT NULL DEFAULT 0,
+      is_bot INTEGER NOT NULL DEFAULT 0, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,event_id,event_name)
+    );
+    CREATE TABLE IF NOT EXISTS pixel_event_mappings (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      pixel_connection_id INTEGER NOT NULL REFERENCES pixel_connections(id) ON DELETE CASCADE,
+      internal_event TEXT NOT NULL, provider_event_name TEXT NOT NULL,
+      enabled INTEGER NOT NULL DEFAULT 1, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(pixel_connection_id,internal_event)
+    );
+    CREATE TABLE IF NOT EXISTS pixel_event_deliveries (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      tracking_event_id TEXT NOT NULL REFERENCES tracking_events(id) ON DELETE CASCADE,
+      pixel_connection_id INTEGER NOT NULL REFERENCES pixel_connections(id) ON DELETE CASCADE,
+      channel TEXT NOT NULL, provider_event_name TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'queued', error TEXT NOT NULL DEFAULT '', attempts INTEGER NOT NULL DEFAULT 0,
+      sent_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(tracking_event_id,pixel_connection_id,channel)
+    );
+    CREATE TABLE IF NOT EXISTS projects (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), name TEXT NOT NULL, slug TEXT NOT NULL,
+      status TEXT NOT NULL DEFAULT 'draft', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, slug)
+    );
+    CREATE TABLE IF NOT EXISTS product_pages (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL,
+      title TEXT NOT NULL, slug TEXT NOT NULL, body TEXT NOT NULL DEFAULT '',
+      creation_method TEXT NOT NULL DEFAULT 'blank', template_key TEXT NOT NULL DEFAULT 'custom',
+      content_json TEXT NOT NULL DEFAULT '{}', imported_html TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
+      published_at TEXT, deleted_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(store_id, slug)
+    );
+    CREATE TABLE IF NOT EXISTS storefront_settings (
+      store_id INTEGER PRIMARY KEY REFERENCES stores(id) ON DELETE CASCADE,
+      logo_name TEXT NOT NULL DEFAULT '', logo_mime TEXT NOT NULL DEFAULT '', logo_base64 TEXT NOT NULL DEFAULT '', logo_alt TEXT NOT NULL DEFAULT '',
+      favicon_name TEXT NOT NULL DEFAULT '', favicon_mime TEXT NOT NULL DEFAULT '', favicon_base64 TEXT NOT NULL DEFAULT '',
+      primary_color TEXT NOT NULL DEFAULT '#0f5132', secondary_color TEXT NOT NULL DEFAULT '#f4efe5',
+      heading_font TEXT NOT NULL DEFAULT 'Inter', body_font TEXT NOT NULL DEFAULT 'Inter',
+      banner_name TEXT NOT NULL DEFAULT '', banner_mime TEXT NOT NULL DEFAULT '', banner_base64 TEXT NOT NULL DEFAULT '',
+      banner_heading TEXT NOT NULL DEFAULT '', banner_subheading TEXT NOT NULL DEFAULT '', button_text TEXT NOT NULL DEFAULT '',
+      button_target_type TEXT NOT NULL DEFAULT '', button_target_id INTEGER,
+      button_target_url TEXT NOT NULL DEFAULT '',
+      announcement_enabled INTEGER NOT NULL DEFAULT 0, announcement_message TEXT NOT NULL DEFAULT '',
+      announcement_link_text TEXT NOT NULL DEFAULT '', announcement_link_url TEXT NOT NULL DEFAULT '',
+      announcement_background TEXT NOT NULL DEFAULT '#0f5132', announcement_text_color TEXT NOT NULL DEFAULT '#ffffff',
+      header_links_json TEXT NOT NULL DEFAULT '[]', header_sticky INTEGER NOT NULL DEFAULT 1,
+      footer_contact TEXT NOT NULL DEFAULT '', footer_show_products INTEGER NOT NULL DEFAULT 1,
+      section_heading TEXT NOT NULL DEFAULT 'Featured Products', status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, published_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS storefront_featured_products (
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      PRIMARY KEY(store_id,product_id)
+    );
+    CREATE TABLE IF NOT EXISTS product_storefronts (
+      product_id INTEGER PRIMARY KEY REFERENCES products(id) ON DELETE CASCADE,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      page_id INTEGER NOT NULL REFERENCES product_pages(id) ON DELETE CASCADE,
+      description_html TEXT NOT NULL,
+      button_text TEXT NOT NULL,
+      button_action TEXT NOT NULL DEFAULT 'checkout' CHECK(button_action IN ('checkout')),
+      status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, published_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS product_storefront_media (
+      id INTEGER PRIMARY KEY,
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      media_kind TEXT NOT NULL CHECK(media_kind IN ('main','additional','gif')),
+      file_name TEXT NOT NULL, mime_type TEXT NOT NULL, data_base64 TEXT NOT NULL,
+      sort_order INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS checkout_sessions (
+      id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      page_id INTEGER NOT NULL REFERENCES product_pages(id), product_id INTEGER NOT NULL REFERENCES products(id),
+      bundle_id INTEGER REFERENCES product_bundles(id), upsell_id INTEGER REFERENCES product_upsells(id),
+      downsell_id INTEGER REFERENCES product_downsells(id), coupon_code TEXT,
+      exit_offer_id INTEGER REFERENCES exit_offers(id), exit_offer_discount_paise INTEGER NOT NULL DEFAULT 0, exit_offer_claimed_at TEXT,
+      payment_method TEXT NOT NULL DEFAULT 'cod', gift_card_code TEXT, ip_address TEXT NOT NULL DEFAULT '',
+      quantity INTEGER NOT NULL DEFAULT 1 CHECK(quantity > 0), name TEXT NOT NULL DEFAULT '',
+      phone TEXT NOT NULL DEFAULT '', alternate_phone TEXT NOT NULL DEFAULT '', email TEXT NOT NULL DEFAULT '',
+      address TEXT NOT NULL DEFAULT '', address_line2 TEXT NOT NULL DEFAULT '', landmark TEXT NOT NULL DEFAULT '', city TEXT NOT NULL DEFAULT '', state TEXT NOT NULL DEFAULT '', country TEXT NOT NULL DEFAULT '',
+      pincode TEXT NOT NULL DEFAULT '', pincode_validated INTEGER NOT NULL DEFAULT 0, pincode_validated_at TEXT, current_stage TEXT NOT NULL DEFAULT 'opened', shipping_paise INTEGER NOT NULL DEFAULT 0, shipping_method_id INTEGER REFERENCES shipping_methods(id), shipping_method TEXT NOT NULL DEFAULT '', terms_accepted INTEGER NOT NULL DEFAULT 0,
+      status TEXT NOT NULL DEFAULT 'draft',
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS customers (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, phone TEXT NOT NULL, alternate_phone TEXT NOT NULL DEFAULT '',
+      email TEXT NOT NULL DEFAULT '', address TEXT NOT NULL, address_line2 TEXT NOT NULL DEFAULT '', landmark TEXT NOT NULL DEFAULT '', city TEXT NOT NULL DEFAULT '',
+      state TEXT NOT NULL DEFAULT '', country TEXT NOT NULL DEFAULT '', pincode TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, phone)
+    );
+    CREATE TABLE IF NOT EXISTS orders (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      order_number TEXT, customer_id INTEGER NOT NULL REFERENCES customers(id), checkout_session_id TEXT NOT NULL UNIQUE REFERENCES checkout_sessions(id),
+      bundle_id INTEGER REFERENCES product_bundles(id), coupon_code TEXT,
+      subtotal_paise INTEGER NOT NULL DEFAULT 0, discount_paise INTEGER NOT NULL DEFAULT 0,
+      shipping_paise INTEGER NOT NULL DEFAULT 0, shipping_method_id INTEGER REFERENCES shipping_methods(id), shipping_method TEXT NOT NULL DEFAULT '',
+      tags_json TEXT NOT NULL DEFAULT '[]',
+      payment_method TEXT NOT NULL DEFAULT 'cod', gift_card_code TEXT, gift_card_applied_paise INTEGER NOT NULL DEFAULT 0,
+      channel TEXT NOT NULL, total_paise INTEGER NOT NULL, payment_status TEXT NOT NULL,
+      fulfillment_status TEXT NOT NULL, delivery_status TEXT NOT NULL, delivery_method TEXT NOT NULL,
+      archived INTEGER NOT NULL DEFAULT 0, archived_at TEXT, fulfilled_at TEXT,
+      reversal_paise INTEGER NOT NULL DEFAULT 0, return_status TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'customer',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS order_items (
+      id INTEGER PRIMARY KEY, order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), name TEXT NOT NULL,
+      quantity INTEGER NOT NULL, unit_price_paise INTEGER NOT NULL, line_total_paise INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS order_events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      event_type TEXT NOT NULL, old_status TEXT NOT NULL DEFAULT '',
+      new_status TEXT NOT NULL DEFAULT '', note TEXT NOT NULL DEFAULT '', source TEXT NOT NULL DEFAULT 'system',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS order_upsell_events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      checkout_session_id TEXT NOT NULL REFERENCES checkout_sessions(id) ON DELETE CASCADE,
+      upsell_id INTEGER NOT NULL REFERENCES product_upsells(id) ON DELETE RESTRICT,
+      status TEXT NOT NULL DEFAULT 'NOT_SHOWN' CHECK(status IN ('NOT_SHOWN','SHOWN','ACCEPTED','REJECTED','EXPIRED','FAILED')),
+      token_hash TEXT NOT NULL, base_order_total INTEGER NOT NULL DEFAULT 0,
+      upsell_value INTEGER NOT NULL DEFAULT 0, final_order_total INTEGER NOT NULL DEFAULT 0,
+      shown_at TEXT, accepted_at TEXT, rejected_at TEXT, failed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,order_id,upsell_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_upsell_status ON order_upsell_events(store_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_order_upsell_checkout ON order_upsell_events(checkout_session_id);
+    CREATE TABLE IF NOT EXISTS exit_offer_interactions (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      exit_offer_id INTEGER NOT NULL REFERENCES exit_offers(id) ON DELETE CASCADE,
+      session_key TEXT NOT NULL, visitor_session_id TEXT NOT NULL DEFAULT '',
+      checkout_session_id TEXT REFERENCES checkout_sessions(id) ON DELETE SET NULL,
+      order_id INTEGER REFERENCES orders(id) ON DELETE SET NULL,
+      status TEXT NOT NULL DEFAULT 'SHOWN' CHECK(status IN ('SHOWN','CLAIMED','REJECTED','CONVERTED')),
+      show_count INTEGER NOT NULL DEFAULT 1, discount_paise INTEGER NOT NULL DEFAULT 0,
+      original_total_paise INTEGER NOT NULL DEFAULT 0, final_total_paise INTEGER NOT NULL DEFAULT 0,
+      shown_at TEXT, claimed_at TEXT, rejected_at TEXT, converted_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,exit_offer_id,session_key)
+    );
+    CREATE INDEX IF NOT EXISTS idx_exit_offers_store_status ON exit_offers(store_id,status,updated_at);
+    CREATE INDEX IF NOT EXISTS idx_exit_offer_interactions_offer ON exit_offer_interactions(store_id,exit_offer_id,status,created_at);
+    CREATE TABLE IF NOT EXISTS draft_orders (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      customer_id INTEGER REFERENCES customers(id), customer_name TEXT NOT NULL, customer_phone TEXT NOT NULL,
+      customer_email TEXT NOT NULL DEFAULT '', customer_address TEXT NOT NULL DEFAULT '',
+      customer_city TEXT NOT NULL DEFAULT '', customer_state TEXT NOT NULL DEFAULT '', customer_country TEXT NOT NULL DEFAULT '', customer_pincode TEXT NOT NULL DEFAULT '',
+      discount_paise INTEGER NOT NULL DEFAULT 0, shipping_paise INTEGER NOT NULL DEFAULT 0,
+      shipping_method TEXT NOT NULL DEFAULT '', payment_method TEXT NOT NULL DEFAULT 'cod', note TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'draft', converted_order_id INTEGER REFERENCES orders(id), created_by TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS draft_order_items (
+      id INTEGER PRIMARY KEY, draft_id INTEGER NOT NULL REFERENCES draft_orders(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), name TEXT NOT NULL, quantity INTEGER NOT NULL,
+      unit_price_paise INTEGER NOT NULL, line_total_paise INTEGER NOT NULL
+    );
+    CREATE TABLE IF NOT EXISTS order_table_preferences (
+      user_id TEXT NOT NULL, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      column_order_json TEXT NOT NULL DEFAULT '[]', visible_columns_json TEXT NOT NULL DEFAULT '[]',
+      sort_field TEXT NOT NULL DEFAULT 'date', sort_direction TEXT NOT NULL DEFAULT 'desc', hide_archived INTEGER NOT NULL DEFAULT 1,
+      updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, PRIMARY KEY(user_id,store_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_events_order ON order_events(store_id,order_id,id);
+    CREATE TABLE IF NOT EXISTS shipments (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL UNIQUE REFERENCES orders(id) ON DELETE CASCADE,
+      partner_id INTEGER NOT NULL REFERENCES delivery_partners(id),
+      tracking_number TEXT NOT NULL, tracking_url TEXT NOT NULL DEFAULT '', external_id TEXT NOT NULL DEFAULT '',
+      status TEXT NOT NULL DEFAULT 'ready_to_ship', shipped_at TEXT, delivered_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      session_id TEXT, event_type TEXT NOT NULL, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS live_visitor_sessions (
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      page_id INTEGER NOT NULL REFERENCES product_pages(id) ON DELETE CASCADE,
+      page_slug TEXT NOT NULL DEFAULT '', status TEXT NOT NULL DEFAULT 'viewing_product',
+      quantity INTEGER NOT NULL DEFAULT 1, bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL,
+      cart_value_paise INTEGER NOT NULL DEFAULT 0, checkout_session_id TEXT REFERENCES checkout_sessions(id) ON DELETE SET NULL,
+      checkout_progress TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL DEFAULT '', device_type TEXT NOT NULL DEFAULT 'Unknown', is_bot INTEGER NOT NULL DEFAULT 0,
+      started_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, checkout_started_at TEXT,
+      last_activity_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      PRIMARY KEY(store_id,session_id)
+    );
+    CREATE TABLE IF NOT EXISTS live_visitor_events (
+      event_id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      session_id TEXT NOT NULL, event_name TEXT NOT NULL,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      page_id INTEGER NOT NULL REFERENCES product_pages(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 1, bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL,
+      cart_value_paise INTEGER NOT NULL DEFAULT 0, checkout_session_id TEXT,
+      checkout_progress TEXT NOT NULL DEFAULT '', event_index INTEGER NOT NULL DEFAULT 1,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS otp_verifications (
+      id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      checkout_session_id TEXT NOT NULL REFERENCES checkout_sessions(id) ON DELETE CASCADE,
+      phone TEXT NOT NULL, otp_hash TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'OTP_SENT',
+      attempt_count INTEGER NOT NULL DEFAULT 0, resend_count INTEGER NOT NULL DEFAULT 0,
+      last_sent_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, expires_at TEXT NOT NULL,
+      verified_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS cod_bot_attempts (
+      id TEXT PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      visitor_session_id TEXT NOT NULL DEFAULT '', checkout_session_id TEXT,
+      phone TEXT NOT NULL DEFAULT '', device_id TEXT NOT NULL DEFAULT '', ip_address TEXT NOT NULL DEFAULT '',
+      risk_score INTEGER NOT NULL DEFAULT 0, risk_level TEXT NOT NULL DEFAULT 'low', action TEXT NOT NULL DEFAULT 'allow',
+      signals_json TEXT NOT NULL DEFAULT '[]', blocked INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS cod_blocklist (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      phone TEXT NOT NULL, address_fingerprint TEXT NOT NULL DEFAULT '', name_fingerprint TEXT NOT NULL DEFAULT '', reason TEXT NOT NULL DEFAULT '', created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, phone)
+    );
+    CREATE TABLE IF NOT EXISTS cod_risk_events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      session_id TEXT, event_type TEXT NOT NULL, phone TEXT NOT NULL DEFAULT '',
+      ip_address TEXT NOT NULL DEFAULT '', details TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS collections (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, slug TEXT NOT NULL, description TEXT NOT NULL DEFAULT '',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(store_id, slug)
+    );
+    CREATE TABLE IF NOT EXISTS collection_products (
+      collection_id INTEGER NOT NULL REFERENCES collections(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      PRIMARY KEY(collection_id, product_id)
+    );
+    CREATE TABLE IF NOT EXISTS locations (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      name TEXT NOT NULL, is_default INTEGER NOT NULL DEFAULT 0,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, UNIQUE(store_id, name)
+    );
+    CREATE TABLE IF NOT EXISTS inventory_levels (
+      store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id) ON DELETE CASCADE,
+      location_id INTEGER NOT NULL REFERENCES locations(id) ON DELETE CASCADE,
+      quantity INTEGER NOT NULL DEFAULT 0 CHECK(quantity >= 0),
+      PRIMARY KEY(product_id, location_id)
+    );
+    CREATE TABLE IF NOT EXISTS inventory_movements (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), location_id INTEGER NOT NULL REFERENCES locations(id),
+      delta INTEGER NOT NULL, reason TEXT NOT NULL, reference_type TEXT, reference_id INTEGER,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE TABLE IF NOT EXISTS purchase_orders (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      po_number TEXT, vendor TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'ordered',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS purchase_order_items (
+      id INTEGER PRIMARY KEY, purchase_order_id INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL CHECK(quantity > 0),
+      unit_cost_paise INTEGER NOT NULL CHECK(unit_cost_paise >= 0)
+    );
+    CREATE TABLE IF NOT EXISTS transfers (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      transfer_number TEXT, source_location_id INTEGER NOT NULL REFERENCES locations(id),
+      destination_location_id INTEGER NOT NULL REFERENCES locations(id), status TEXT NOT NULL DEFAULT 'in_transit',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, received_at TEXT
+    );
+    CREATE TABLE IF NOT EXISTS transfer_items (
+      id INTEGER PRIMARY KEY, transfer_id INTEGER NOT NULL REFERENCES transfers(id) ON DELETE CASCADE,
+      product_id INTEGER NOT NULL REFERENCES products(id), quantity INTEGER NOT NULL CHECK(quantity > 0)
+    );
+    CREATE TABLE IF NOT EXISTS gift_cards (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      code TEXT NOT NULL, initial_balance_paise INTEGER NOT NULL CHECK(initial_balance_paise > 0),
+      balance_paise INTEGER NOT NULL CHECK(balance_paise >= 0), status TEXT NOT NULL DEFAULT 'active',
+      note TEXT NOT NULL DEFAULT '', issued_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id, code)
+    );
+    CREATE INDEX IF NOT EXISTS idx_product_storefront_media ON product_storefront_media(store_id,product_id,media_kind,sort_order);
+    CREATE INDEX IF NOT EXISTS idx_storefront_featured ON storefront_featured_products(store_id,sort_order);
+    CREATE INDEX IF NOT EXISTS idx_store_policies_store ON store_policies(store_id,status,policy_type);
+    CREATE INDEX IF NOT EXISTS idx_policy_rules_store ON policy_rules(store_id,status,applies_to);
+    CREATE INDEX IF NOT EXISTS idx_review_imports_store ON review_imports(store_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_review_import_rows_batch ON review_import_rows(import_id,row_number);
+    CREATE INDEX IF NOT EXISTS idx_reviews_store_status ON reviews(store_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_reviews_product_status ON reviews(product_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_review_images_review ON review_images(review_id,sort_order);
+    CREATE INDEX IF NOT EXISTS idx_products_store ON products(store_id);
+    CREATE INDEX IF NOT EXISTS idx_store_memberships_store ON store_memberships(store_id,user_id);
+    CREATE INDEX IF NOT EXISTS idx_merchant_sessions_token ON merchant_sessions(token_hash);
+    CREATE INDEX IF NOT EXISTS idx_merchant_sessions_expiry ON merchant_sessions(expires_at);
+    CREATE INDEX IF NOT EXISTS idx_orders_store ON orders(store_id);
+    CREATE INDEX IF NOT EXISTS idx_checkout_store ON checkout_sessions(store_id);
+    CREATE INDEX IF NOT EXISTS idx_bundles_product ON product_bundles(store_id, product_id);
+    CREATE INDEX IF NOT EXISTS idx_upsells_product ON product_upsells(store_id, product_id);
+    CREATE INDEX IF NOT EXISTS idx_downsells_product ON product_downsells(store_id, product_id);
+    CREATE INDEX IF NOT EXISTS idx_coupons_store ON discount_coupons(store_id, code);
+    CREATE INDEX IF NOT EXISTS idx_delivery_partners_store ON delivery_partners(store_id, active);
+    CREATE INDEX IF NOT EXISTS idx_shipments_store ON shipments(store_id, updated_at);
+    CREATE INDEX IF NOT EXISTS idx_custom_domains_store ON custom_domains(store_id, updated_at);
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_custom_domains_primary ON custom_domains(store_id) WHERE primary_domain=1;
+    CREATE INDEX IF NOT EXISTS idx_domain_audit_store ON domain_audit_log(store_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_tracking_pixels_store ON tracking_pixels(store_id,enabled);
+    CREATE INDEX IF NOT EXISTS idx_pixel_events_store ON pixel_events(store_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_pixel_connections_store ON pixel_connections(store_id,enabled,status);
+    CREATE INDEX IF NOT EXISTS idx_tracking_events_store ON tracking_events(store_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_tracking_events_session ON tracking_events(store_id,session_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_pixel_deliveries_store ON pixel_event_deliveries(store_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_pixel_deliveries_connection ON pixel_event_deliveries(pixel_connection_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_cod_blocklist_store_phone ON cod_blocklist(store_id, phone);
+    CREATE INDEX IF NOT EXISTS idx_cod_risk_events_store ON cod_risk_events(store_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_live_visitors_store_activity ON live_visitor_sessions(store_id,last_activity_at);
+    CREATE INDEX IF NOT EXISTS idx_live_visitor_events_session ON live_visitor_events(store_id,session_id,created_at);
+    CREATE INDEX IF NOT EXISTS idx_otp_checkout_phone ON otp_verifications(store_id,checkout_session_id,phone,created_at);
+    CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_ip ON cod_bot_attempts(store_id,ip_address,created_at);
+    CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_device ON cod_bot_attempts(store_id,device_id,created_at);
+  `);
+  const liveEventColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(live_visitor_events)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!liveEventColumns.has("event_index"))
+    db.exec(
+      "ALTER TABLE live_visitor_events ADD COLUMN event_index INTEGER NOT NULL DEFAULT 1",
+    );
+  const liveSessionColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(live_visitor_sessions)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!liveSessionColumns.has("device_type"))
+    db.exec(
+      "ALTER TABLE live_visitor_sessions ADD COLUMN device_type TEXT NOT NULL DEFAULT 'Unknown'",
+    );
+  const storeColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(stores)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!storeColumns.has("currency"))
+    db.exec(
+      "ALTER TABLE stores ADD COLUMN currency TEXT NOT NULL DEFAULT 'INR'",
+    );
+  const storefrontColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(storefront_settings)")
+      .all()
+      .map((column) => column.name),
+  );
+  const storefrontMigrations = [
+    ["favicon_name", "ALTER TABLE storefront_settings ADD COLUMN favicon_name TEXT NOT NULL DEFAULT ''"],
+    ["favicon_mime", "ALTER TABLE storefront_settings ADD COLUMN favicon_mime TEXT NOT NULL DEFAULT ''"],
+    ["favicon_base64", "ALTER TABLE storefront_settings ADD COLUMN favicon_base64 TEXT NOT NULL DEFAULT ''"],
+    ["primary_color", "ALTER TABLE storefront_settings ADD COLUMN primary_color TEXT NOT NULL DEFAULT '#0f5132'"],
+    ["secondary_color", "ALTER TABLE storefront_settings ADD COLUMN secondary_color TEXT NOT NULL DEFAULT '#f4efe5'"],
+    ["heading_font", "ALTER TABLE storefront_settings ADD COLUMN heading_font TEXT NOT NULL DEFAULT 'Inter'"],
+    ["body_font", "ALTER TABLE storefront_settings ADD COLUMN body_font TEXT NOT NULL DEFAULT 'Inter'"],
+    ["button_target_url", "ALTER TABLE storefront_settings ADD COLUMN button_target_url TEXT NOT NULL DEFAULT ''"],
+    ["announcement_enabled", "ALTER TABLE storefront_settings ADD COLUMN announcement_enabled INTEGER NOT NULL DEFAULT 0"],
+    ["announcement_message", "ALTER TABLE storefront_settings ADD COLUMN announcement_message TEXT NOT NULL DEFAULT ''"],
+    ["announcement_link_text", "ALTER TABLE storefront_settings ADD COLUMN announcement_link_text TEXT NOT NULL DEFAULT ''"],
+    ["announcement_link_url", "ALTER TABLE storefront_settings ADD COLUMN announcement_link_url TEXT NOT NULL DEFAULT ''"],
+    ["announcement_background", "ALTER TABLE storefront_settings ADD COLUMN announcement_background TEXT NOT NULL DEFAULT '#0f5132'"],
+    ["announcement_text_color", "ALTER TABLE storefront_settings ADD COLUMN announcement_text_color TEXT NOT NULL DEFAULT '#ffffff'"],
+    ["header_links_json", "ALTER TABLE storefront_settings ADD COLUMN header_links_json TEXT NOT NULL DEFAULT '[]'"],
+    ["header_sticky", "ALTER TABLE storefront_settings ADD COLUMN header_sticky INTEGER NOT NULL DEFAULT 1"],
+    ["footer_contact", "ALTER TABLE storefront_settings ADD COLUMN footer_contact TEXT NOT NULL DEFAULT ''"],
+    ["footer_show_products", "ALTER TABLE storefront_settings ADD COLUMN footer_show_products INTEGER NOT NULL DEFAULT 1"],
+  ];
+  for (const [column, sql] of storefrontMigrations)
+    if (!storefrontColumns.has(column)) db.exec(sql);
+  const productColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(products)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!productColumns.has("compare_price_paise"))
+    db.exec("ALTER TABLE products ADD COLUMN compare_price_paise INTEGER");
+  if (!productColumns.has("description"))
+    db.exec(
+      "ALTER TABLE products ADD COLUMN description TEXT NOT NULL DEFAULT ''",
+    );
+  const pageColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(product_pages)")
+      .all()
+      .map((column) => column.name),
+  );
+  const migrations = [
+    ["draft_json", "ALTER TABLE product_pages ADD COLUMN draft_json TEXT"],
+    [
+      "project_id",
+      "ALTER TABLE product_pages ADD COLUMN project_id INTEGER REFERENCES projects(id) ON DELETE SET NULL",
+    ],
+    [
+      "creation_method",
+      "ALTER TABLE product_pages ADD COLUMN creation_method TEXT NOT NULL DEFAULT 'blank'",
+    ],
+    [
+      "template_key",
+      "ALTER TABLE product_pages ADD COLUMN template_key TEXT NOT NULL DEFAULT 'custom'",
+    ],
+    [
+      "content_json",
+      "ALTER TABLE product_pages ADD COLUMN content_json TEXT NOT NULL DEFAULT '{}'",
+    ],
+    [
+      "imported_html",
+      "ALTER TABLE product_pages ADD COLUMN imported_html TEXT NOT NULL DEFAULT ''",
+    ],
+    ["deleted_at", "ALTER TABLE product_pages ADD COLUMN deleted_at TEXT"],
+  ];
+  for (const [column, sql] of migrations)
+    if (!pageColumns.has(column)) db.exec(sql);
+  const legacyPageKind = ["page", "type"].join("_");
+  const legacyDestination = ["destination", "slug"].join("_");
+  if (pageColumns.has(legacyPageKind)) {
+    db.prepare(
+      `DELETE FROM product_pages WHERE ${legacyPageKind}<>'product'`,
+    ).run();
+    db.exec(`ALTER TABLE product_pages DROP COLUMN ${legacyPageKind}`);
+  }
+  if (pageColumns.has(legacyDestination))
+    db.exec(`ALTER TABLE product_pages DROP COLUMN ${legacyDestination}`);
+  const checkoutColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(checkout_sessions)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!checkoutColumns.has("bundle_id"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN bundle_id INTEGER REFERENCES product_bundles(id)",
+    );
+  if (!checkoutColumns.has("upsell_id"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN upsell_id INTEGER REFERENCES product_upsells(id)",
+    );
+  if (!checkoutColumns.has("downsell_id"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN downsell_id INTEGER REFERENCES product_downsells(id)",
+    );
+  if (!checkoutColumns.has("coupon_code"))
+    db.exec("ALTER TABLE checkout_sessions ADD COLUMN coupon_code TEXT");
+  if (!checkoutColumns.has("gift_card_code"))
+    db.exec("ALTER TABLE checkout_sessions ADD COLUMN gift_card_code TEXT");
+  if (!checkoutColumns.has("exit_offer_id"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN exit_offer_id INTEGER REFERENCES exit_offers(id)",
+    );
+  if (!checkoutColumns.has("exit_offer_discount_paise"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN exit_offer_discount_paise INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!checkoutColumns.has("exit_offer_claimed_at"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN exit_offer_claimed_at TEXT",
+    );
+  if (!checkoutColumns.has("payment_method"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cod'",
+    );
+  if (!checkoutColumns.has("ip_address"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN ip_address TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("alternate_phone"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN alternate_phone TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("email"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN email TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("city"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN city TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("state"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN state TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("pincode"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN pincode TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("terms_accepted"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN terms_accepted INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!checkoutColumns.has("address_line2"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN address_line2 TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("landmark"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN landmark TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("country"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN country TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("pincode_validated"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN pincode_validated INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!checkoutColumns.has("pincode_validated_at"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN pincode_validated_at TEXT",
+    );
+  if (!checkoutColumns.has("current_stage"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN current_stage TEXT NOT NULL DEFAULT 'opened'",
+    );
+  if (!checkoutColumns.has("shipping_paise"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN shipping_paise INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!checkoutColumns.has("shipping_method"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN shipping_method TEXT NOT NULL DEFAULT ''",
+    );
+  if (!checkoutColumns.has("shipping_method_id"))
+    db.exec(
+      "ALTER TABLE checkout_sessions ADD COLUMN shipping_method_id INTEGER REFERENCES shipping_methods(id)",
+    );
+  const checkoutSecurityMigrations = [
+    ["phone_verification_status", "ALTER TABLE checkout_sessions ADD COLUMN phone_verification_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED'"],
+    ["phone_verified_at", "ALTER TABLE checkout_sessions ADD COLUMN phone_verified_at TEXT"],
+    ["otp_required", "ALTER TABLE checkout_sessions ADD COLUMN otp_required INTEGER NOT NULL DEFAULT 0"],
+    ["device_id", "ALTER TABLE checkout_sessions ADD COLUMN device_id TEXT NOT NULL DEFAULT ''"],
+    ["bot_risk_score", "ALTER TABLE checkout_sessions ADD COLUMN bot_risk_score INTEGER NOT NULL DEFAULT 0"],
+    ["bot_risk_level", "ALTER TABLE checkout_sessions ADD COLUMN bot_risk_level TEXT NOT NULL DEFAULT 'low'"],
+    ["bot_action", "ALTER TABLE checkout_sessions ADD COLUMN bot_action TEXT NOT NULL DEFAULT 'allow'"],
+    ["behavior_json", "ALTER TABLE checkout_sessions ADD COLUMN behavior_json TEXT NOT NULL DEFAULT '{}'"],
+    ["checkout_token_valid", "ALTER TABLE checkout_sessions ADD COLUMN checkout_token_valid INTEGER NOT NULL DEFAULT 0"],
+  ];
+  for (const [column, sql] of checkoutSecurityMigrations)
+    if (!checkoutColumns.has(column)) db.exec(sql);
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_checkout_ip_created ON checkout_sessions(store_id, ip_address, created_at)",
+  );
+  const customerColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(customers)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!customerColumns.has("alternate_phone"))
+    db.exec(
+      "ALTER TABLE customers ADD COLUMN alternate_phone TEXT NOT NULL DEFAULT ''",
+    );
+  if (!customerColumns.has("email"))
+    db.exec("ALTER TABLE customers ADD COLUMN email TEXT NOT NULL DEFAULT ''");
+  if (!customerColumns.has("city"))
+    db.exec("ALTER TABLE customers ADD COLUMN city TEXT NOT NULL DEFAULT ''");
+  if (!customerColumns.has("state"))
+    db.exec("ALTER TABLE customers ADD COLUMN state TEXT NOT NULL DEFAULT ''");
+  if (!customerColumns.has("pincode"))
+    db.exec(
+      "ALTER TABLE customers ADD COLUMN pincode TEXT NOT NULL DEFAULT ''",
+    );
+  if (!customerColumns.has("address_line2"))
+    db.exec(
+      "ALTER TABLE customers ADD COLUMN address_line2 TEXT NOT NULL DEFAULT ''",
+    );
+  if (!customerColumns.has("landmark"))
+    db.exec(
+      "ALTER TABLE customers ADD COLUMN landmark TEXT NOT NULL DEFAULT ''",
+    );
+  if (!customerColumns.has("country"))
+    db.exec(
+      "ALTER TABLE customers ADD COLUMN country TEXT NOT NULL DEFAULT ''",
+    );
+  const orderColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(orders)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!orderColumns.has("bundle_id"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN bundle_id INTEGER REFERENCES product_bundles(id)",
+    );
+  if (!orderColumns.has("coupon_code"))
+    db.exec("ALTER TABLE orders ADD COLUMN coupon_code TEXT");
+  if (!orderColumns.has("gift_card_code"))
+    db.exec("ALTER TABLE orders ADD COLUMN gift_card_code TEXT");
+  if (!orderColumns.has("gift_card_applied_paise"))
+    db.exec("ALTER TABLE orders ADD COLUMN gift_card_applied_paise INTEGER NOT NULL DEFAULT 0");
+  if (!orderColumns.has("subtotal_paise"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN subtotal_paise INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!orderColumns.has("discount_paise"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN discount_paise INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!orderColumns.has("tags_json"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN tags_json TEXT NOT NULL DEFAULT '[]'",
+    );
+  if (!orderColumns.has("payment_method"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'cod'",
+    );
+  if (!orderColumns.has("shipping_paise"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN shipping_paise INTEGER NOT NULL DEFAULT 0",
+    );
+  if (!orderColumns.has("shipping_method"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN shipping_method TEXT NOT NULL DEFAULT ''",
+    );
+  if (!orderColumns.has("shipping_method_id"))
+    db.exec(
+      "ALTER TABLE orders ADD COLUMN shipping_method_id INTEGER REFERENCES shipping_methods(id)",
+    );
+  const orderSecurityMigrations = [
+    ["phone_verification_status", "ALTER TABLE orders ADD COLUMN phone_verification_status TEXT NOT NULL DEFAULT 'NOT_REQUIRED'"],
+    ["phone_verified_at", "ALTER TABLE orders ADD COLUMN phone_verified_at TEXT"],
+    ["bot_risk_score", "ALTER TABLE orders ADD COLUMN bot_risk_score INTEGER NOT NULL DEFAULT 0"],
+    ["bot_risk_level", "ALTER TABLE orders ADD COLUMN bot_risk_level TEXT NOT NULL DEFAULT 'low'"],
+  ];
+  for (const [column, sql] of orderSecurityMigrations)
+    if (!orderColumns.has(column)) db.exec(sql);
+  const orderWorkspaceMigrations = [
+    ["archived", "ALTER TABLE orders ADD COLUMN archived INTEGER NOT NULL DEFAULT 0"],
+    ["archived_at", "ALTER TABLE orders ADD COLUMN archived_at TEXT"],
+    ["fulfilled_at", "ALTER TABLE orders ADD COLUMN fulfilled_at TEXT"],
+    ["reversal_paise", "ALTER TABLE orders ADD COLUMN reversal_paise INTEGER NOT NULL DEFAULT 0"],
+    ["return_status", "ALTER TABLE orders ADD COLUMN return_status TEXT NOT NULL DEFAULT ''"],
+    ["source", "ALTER TABLE orders ADD COLUMN source TEXT NOT NULL DEFAULT 'customer'"],
+  ];
+  for (const [column, sql] of orderWorkspaceMigrations)
+    if (!orderColumns.has(column)) db.exec(sql);
+  const orderEventColumns = new Set(db.prepare("PRAGMA table_info(order_events)").all().map((column) => column.name));
+  if (!orderEventColumns.has("source"))
+    db.exec("ALTER TABLE order_events ADD COLUMN source TEXT NOT NULL DEFAULT 'system'");
+  const upsellColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(product_upsells)")
+      .all()
+      .map((column) => column.name),
+  );
+  const upsellMigrations = [
+    ["name", "ALTER TABLE product_upsells ADD COLUMN name TEXT NOT NULL DEFAULT ''"],
+    ["status", "ALTER TABLE product_upsells ADD COLUMN status TEXT NOT NULL DEFAULT 'active'"],
+    ["trigger_type", "ALTER TABLE product_upsells ADD COLUMN trigger_type TEXT NOT NULL DEFAULT 'specific_product'"],
+    ["trigger_collection_id", "ALTER TABLE product_upsells ADD COLUMN trigger_collection_id INTEGER REFERENCES collections(id) ON DELETE SET NULL"],
+    ["trigger_bundle_id", "ALTER TABLE product_upsells ADD COLUMN trigger_bundle_id INTEGER REFERENCES product_bundles(id) ON DELETE SET NULL"],
+    ["minimum_order_paise", "ALTER TABLE product_upsells ADD COLUMN minimum_order_paise INTEGER"],
+    ["maximum_order_paise", "ALTER TABLE product_upsells ADD COLUMN maximum_order_paise INTEGER"],
+    ["quantity", "ALTER TABLE product_upsells ADD COLUMN quantity INTEGER NOT NULL DEFAULT 1"],
+    ["headline", "ALTER TABLE product_upsells ADD COLUMN headline TEXT NOT NULL DEFAULT 'Special Offer'"],
+    ["subheadline", "ALTER TABLE product_upsells ADD COLUMN subheadline TEXT NOT NULL DEFAULT 'Add this to your existing order'"],
+    ["description", "ALTER TABLE product_upsells ADD COLUMN description TEXT NOT NULL DEFAULT ''"],
+    ["use_product_media", "ALTER TABLE product_upsells ADD COLUMN use_product_media INTEGER NOT NULL DEFAULT 1"],
+    ["accept_button_text", "ALTER TABLE product_upsells ADD COLUMN accept_button_text TEXT NOT NULL DEFAULT 'Add To My Order'"],
+    ["reject_button_text", "ALTER TABLE product_upsells ADD COLUMN reject_button_text TEXT NOT NULL DEFAULT 'No thanks, continue'"],
+    ["accept_action", "ALTER TABLE product_upsells ADD COLUMN accept_action TEXT NOT NULL DEFAULT 'thank_you'"],
+    ["reject_action", "ALTER TABLE product_upsells ADD COLUMN reject_action TEXT NOT NULL DEFAULT 'thank_you'"],
+    ["allow_existing_product", "ALTER TABLE product_upsells ADD COLUMN allow_existing_product INTEGER NOT NULL DEFAULT 0"],
+    ["updated_at", "ALTER TABLE product_upsells ADD COLUMN updated_at TEXT NOT NULL DEFAULT ''"],
+  ];
+  for (const [column, sql] of upsellMigrations)
+    if (!upsellColumns.has(column)) db.exec(sql);
+  db.prepare("UPDATE product_upsells SET name=title WHERE name='' OR name IS NULL").run();
+  db.prepare("UPDATE product_upsells SET status=CASE WHEN active=1 THEN 'active' ELSE 'disabled' END WHERE status='' OR status IS NULL").run();
+  db.prepare("UPDATE product_upsells SET updated_at=CURRENT_TIMESTAMP WHERE updated_at='' OR updated_at IS NULL").run();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS order_upsell_events (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      order_id INTEGER NOT NULL REFERENCES orders(id) ON DELETE CASCADE,
+      checkout_session_id TEXT NOT NULL REFERENCES checkout_sessions(id) ON DELETE CASCADE,
+      upsell_id INTEGER NOT NULL REFERENCES product_upsells(id) ON DELETE RESTRICT,
+      status TEXT NOT NULL DEFAULT 'NOT_SHOWN' CHECK(status IN ('NOT_SHOWN','SHOWN','ACCEPTED','REJECTED','EXPIRED','FAILED')),
+      token_hash TEXT NOT NULL, base_order_total INTEGER NOT NULL DEFAULT 0,
+      upsell_value INTEGER NOT NULL DEFAULT 0, final_order_total INTEGER NOT NULL DEFAULT 0,
+      shown_at TEXT, accepted_at TEXT, rejected_at TEXT, failed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      UNIQUE(store_id,order_id,upsell_id)
+    );
+    CREATE INDEX IF NOT EXISTS idx_order_upsell_status ON order_upsell_events(store_id,status,created_at);
+    CREATE INDEX IF NOT EXISTS idx_order_upsell_checkout ON order_upsell_events(checkout_session_id);
+  `);
+  const pixelColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(tracking_pixels)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!pixelColumns.has("name"))
+    db.exec(
+      "ALTER TABLE tracking_pixels ADD COLUMN name TEXT NOT NULL DEFAULT ''",
+    );
+  const partnerColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(delivery_partners)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!partnerColumns.has("connection_status"))
+    db.exec(
+      "ALTER TABLE delivery_partners ADD COLUMN connection_status TEXT NOT NULL DEFAULT 'not_connected'",
+    );
+  if (!partnerColumns.has("account_identifier"))
+    db.exec(
+      "ALTER TABLE delivery_partners ADD COLUMN account_identifier TEXT NOT NULL DEFAULT ''",
+    );
+  if (!partnerColumns.has("last_sync_at"))
+    db.exec("ALTER TABLE delivery_partners ADD COLUMN last_sync_at TEXT");
+  if (!partnerColumns.has("last_error"))
+    db.exec(
+      "ALTER TABLE delivery_partners ADD COLUMN last_error TEXT NOT NULL DEFAULT ''",
+    );
+  const domainColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(custom_domains)")
+      .all()
+      .map((column) => column.name),
+  );
+  const domainMigrations = [
+    ["normalized_hostname", "ALTER TABLE custom_domains ADD COLUMN normalized_hostname TEXT NOT NULL DEFAULT ''"],
+    ["domain_type", "ALTER TABLE custom_domains ADD COLUMN domain_type TEXT NOT NULL DEFAULT 'custom'"],
+    ["ownership_status", "ALTER TABLE custom_domains ADD COLUMN ownership_status TEXT NOT NULL DEFAULT 'pending'"],
+    ["ownership_verification_method", "ALTER TABLE custom_domains ADD COLUMN ownership_verification_method TEXT NOT NULL DEFAULT 'dns_txt'"],
+    ["dns_status", "ALTER TABLE custom_domains ADD COLUMN dns_status TEXT NOT NULL DEFAULT 'not_configured'"],
+    ["ssl_status", "ALTER TABLE custom_domains ADD COLUMN ssl_status TEXT NOT NULL DEFAULT 'not_started'"],
+    ["routing_status", "ALTER TABLE custom_domains ADD COLUMN routing_status TEXT NOT NULL DEFAULT 'pending'"],
+    ["overall_status", "ALTER TABLE custom_domains ADD COLUMN overall_status TEXT NOT NULL DEFAULT 'PENDING_CONFIGURATION'"],
+    ["provider", "ALTER TABLE custom_domains ADD COLUMN provider TEXT NOT NULL DEFAULT 'manual'"],
+    ["provider_hostname_id", "ALTER TABLE custom_domains ADD COLUMN provider_hostname_id TEXT NOT NULL DEFAULT ''"],
+    ["detected_cname", "ALTER TABLE custom_domains ADD COLUMN detected_cname TEXT NOT NULL DEFAULT ''"],
+    ["detected_txt", "ALTER TABLE custom_domains ADD COLUMN detected_txt TEXT NOT NULL DEFAULT ''"],
+    ["error_code", "ALTER TABLE custom_domains ADD COLUMN error_code TEXT NOT NULL DEFAULT ''"],
+    ["error_message", "ALTER TABLE custom_domains ADD COLUMN error_message TEXT NOT NULL DEFAULT ''"],
+    ["last_checked_at", "ALTER TABLE custom_domains ADD COLUMN last_checked_at TEXT"],
+    ["ownership_verified_at", "ALTER TABLE custom_domains ADD COLUMN ownership_verified_at TEXT"],
+    ["activated_at", "ALTER TABLE custom_domains ADD COLUMN activated_at TEXT"],
+    ["disconnected_at", "ALTER TABLE custom_domains ADD COLUMN disconnected_at TEXT"],
+  ];
+  for (const [column, sql] of domainMigrations)
+    if (!domainColumns.has(column)) db.exec(sql);
+  db.prepare("UPDATE custom_domains SET normalized_hostname=LOWER(domain_name) WHERE normalized_hostname='' OR normalized_hostname IS NULL").run();
+  db.exec(`
+    CREATE TABLE IF NOT EXISTS domain_audit_log (
+      id INTEGER PRIMARY KEY, store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
+      domain_id INTEGER REFERENCES custom_domains(id) ON DELETE SET NULL,
+      actor TEXT NOT NULL DEFAULT 'merchant', action TEXT NOT NULL, details_json TEXT NOT NULL DEFAULT '{}',
+      created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+    );
+    CREATE INDEX IF NOT EXISTS idx_custom_domains_status ON custom_domains(overall_status,last_checked_at);
+    CREATE INDEX IF NOT EXISTS idx_domain_audit_store ON domain_audit_log(store_id,created_at);
+  `);
+  const blockColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(cod_blocklist)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!blockColumns.has("address_fingerprint"))
+    db.exec(
+      "ALTER TABLE cod_blocklist ADD COLUMN address_fingerprint TEXT NOT NULL DEFAULT ''",
+    );
+  if (!blockColumns.has("name_fingerprint"))
+    db.exec(
+      "ALTER TABLE cod_blocklist ADD COLUMN name_fingerprint TEXT NOT NULL DEFAULT ''",
+    );
+  const reviewColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(reviews)")
+      .all()
+      .map((column) => column.name),
+  );
+  const reviewMigrations = [
+    [
+      "author_country",
+      "ALTER TABLE reviews ADD COLUMN author_country TEXT NOT NULL DEFAULT ''",
+    ],
+    [
+      "author_email",
+      "ALTER TABLE reviews ADD COLUMN author_email TEXT NOT NULL DEFAULT ''",
+    ],
+    [
+      "merchant_reply",
+      "ALTER TABLE reviews ADD COLUMN merchant_reply TEXT NOT NULL DEFAULT ''",
+    ],
+    ["reply_at", "ALTER TABLE reviews ADD COLUMN reply_at TEXT"],
+    [
+      "verified_purchase",
+      "ALTER TABLE reviews ADD COLUMN verified_purchase INTEGER NOT NULL DEFAULT 0",
+    ],
+    [
+      "verification_source",
+      "ALTER TABLE reviews ADD COLUMN verification_source TEXT NOT NULL DEFAULT ''",
+    ],
+    [
+      "featured",
+      "ALTER TABLE reviews ADD COLUMN featured INTEGER NOT NULL DEFAULT 0",
+    ],
+    [
+      "item_type",
+      "ALTER TABLE reviews ADD COLUMN item_type TEXT NOT NULL DEFAULT 'review'",
+    ],
+    [
+      "video_url",
+      "ALTER TABLE reviews ADD COLUMN video_url TEXT NOT NULL DEFAULT ''",
+    ],
+    [
+      "import_batch_id",
+      "ALTER TABLE reviews ADD COLUMN import_batch_id INTEGER REFERENCES review_imports(id) ON DELETE SET NULL",
+    ],
+    [
+      "import_row_number",
+      "ALTER TABLE reviews ADD COLUMN import_row_number INTEGER",
+    ],
+  ];
+  for (const [column, sql] of reviewMigrations)
+    if (!reviewColumns.has(column)) db.exec(sql);
+  migrateSubscriptionPolicy(db);
+  backfillLegacyOrderSubtotals(db);
+  if (filename === ":memory:") db.__commera2TestDatabase = true;
+  return db;
+}

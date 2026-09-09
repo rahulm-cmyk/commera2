@@ -1,0 +1,7 @@
+data/
+node_modules/
+.env
+.env.otp
+*.log
+.DS_Store
+qa-*.png

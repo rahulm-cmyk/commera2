@@ -1,0 +1,82 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Commera2</title>
+    <link rel="stylesheet" href="/styles.css?v=workspace-polish-3" />
+    <link rel="stylesheet" href="/page-blocks.css" />
+    <link rel="stylesheet" href="/online-store.css?v=workspace-polish-1" />
+    <link rel="stylesheet" href="/reviews-ui.css?v=reviews-ui-6" />
+  </head>
+  <body>
+    <aside id="app-sidebar" class="app-sidebar" aria-label="Merchant workspace">
+      <div class="brand">
+        <i>C2</i>
+        <div><strong>Commera2</strong><small>COD Commerce</small></div>
+      </div>
+      <label class="store-label"
+        >ACTIVE STORE<select id="store-select"></select
+      ></label>
+      <nav aria-label="Main navigation">
+        <button class="active" data-view="home">Overview</button>
+        <button data-view="online-store">Online Store</button>
+        <div class="online-store-subnav" aria-label="Online Store navigation">
+          <button data-route="/online-store/themes">Themes</button>
+          <button data-route="/online-store/pages">Pages</button>
+          <button data-route="/online-store/preferences">Preferences</button>
+        </div>
+        <button data-view="orders">Orders</button>
+        <button data-view="products">Products</button>
+        <button data-view="pages">Product Pages</button>
+        <button data-view="reviews">Reviews</button>
+        <button data-view="customers">Customers</button>
+        <span class="nav-section-label">Analytics</span>
+        <button data-view="visitors">Live Visitors</button>
+        <button data-view="policies">Policy</button>
+        <button data-view="settings">Settings</button>
+      </nav>
+      <div class="sidebar-actions">
+        <button id="new-store" class="outline">+ New store</button>
+        <button id="logout" class="outline">Sign out</button>
+      </div>
+    </aside>
+    <button
+      id="sidebar-backdrop"
+      class="sidebar-backdrop"
+      type="button"
+      aria-label="Close navigation"
+    ></button>
+    <main>
+      <div class="mobile-appbar">
+        <button
+          id="mobile-menu"
+          type="button"
+          aria-label="Open navigation"
+          aria-controls="app-sidebar"
+          aria-expanded="false"
+        >
+          ☰</button
+        ><strong id="mobile-store-name">Store</strong>
+      </div>
+      <header class="page-header">
+        <div>
+          <h1 id="page-title">Overview</h1>
+          <p id="page-description">A clear view of this store.</p>
+        </div>
+        <div id="page-actions" class="page-actions"></div>
+      </header>
+      <section id="content"></section>
+    </main>
+    <dialog id="modal" aria-label="Application dialog">
+      <form id="modal-form" method="dialog">
+        <!-- prettier-ignore -->
+        <button class="close" id="modal-close" type="button" aria-label="Close">×</button>
+        <div id="modal-content"></div>
+      </form>
+    </dialog>
+    <div id="floating-layer-root" popover="manual"></div>
+    <div id="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+    <script type="module" src="/app.js?v=ui-overlays-11"></script>
+  </body>
+</html>

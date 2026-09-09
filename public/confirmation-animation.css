@@ -1,0 +1,43 @@
+.thank-you-page .checkout-copy { min-width: 0; }
+.thank-you-page .confirmation-icon { position: relative; width: 72px; height: 72px; margin-bottom: 24px; color: var(--page-accent, #0f5132); }
+.confirmation-icon svg { width: 100%; height: 100%; overflow: visible; }
+.confirmation-circle { fill: currentColor; fill-opacity: .08; stroke: currentColor; stroke-width: 2; transform-origin: center; }
+.confirmation-check { stroke: currentColor; stroke-width: 3.5; stroke-linecap: round; stroke-linejoin: round; stroke-dasharray: 1; stroke-dashoffset: 0; }
+.confirmation-confetti { display: none; position: absolute; inset: -32px; overflow: hidden; pointer-events: none; }
+.confirmation-confetti i { position: absolute; left: 50%; top: 50%; width: 5px; height: 8px; border-radius: 2px; background: currentColor; opacity: 0; }
+.confirmation-confetti i:nth-child(3n) { background: #c99742; }
+.confirmation-status { font-weight: 600; }
+.confirmation-play .confirmation-circle { animation: confirmation-circle-in .35s ease-out both; }
+.confirmation-play .confirmation-check { animation: confirmation-draw .4s .15s ease-out both; }
+.confirmation-play .confirmation-heading { animation: confirmation-fade .55s .1s ease-out both; }
+.confirmation-play .confirmation-summary { animation: confirmation-rise .6s .2s ease-out both; }
+.confirmation-celebrate .confirmation-confetti { display: block; }
+.confirmation-celebrate .confirmation-confetti i { animation: confirmation-confetti .7s .2s ease-out both; }
+.confirmation-preview-note { padding: 12px; border-bottom: 1px solid #ddd; text-align: center; font: 14px system-ui; }
+@keyframes confirmation-circle-in { from { transform: scale(.85); opacity: .5; } to { transform: scale(1); opacity: 1; } }
+@keyframes confirmation-draw { from { stroke-dashoffset: 1; } to { stroke-dashoffset: 0; } }
+@keyframes confirmation-fade { from { opacity: .65; } to { opacity: 1; } }
+@keyframes confirmation-rise { from { opacity: .7; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes confirmation-confetti { 0% { opacity: 0; transform: rotate(var(--angle)) translateY(-25px); } 20% { opacity: .8; } 100% { opacity: 0; transform: rotate(var(--angle)) translateY(-65px) rotate(90deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .thank-you-page *, .thank-you-page *::before, .thank-you-page *::after { animation: none !important; transition: none !important; }
+  .thank-you-page .confirmation-confetti { display: none !important; }
+}
+.thank-you-site {
+  --page-bg: #fafbf9;
+  --page-surface: #fff;
+  --page-text: #17211d;
+  --page-muted: #5f6b64;
+  --page-accent-text: #fff;
+  --page-radius: 16px;
+  font-family: var(--store-body-font, Inter), "Segoe UI", Arial, sans-serif;
+}
+.thank-you-page .checkout-wrap { padding: clamp(28px, 5vw, 64px) 0; border-top: 0; }
+.thank-you-page .confirmation-heading { font-size: clamp(28px, 3.5vw, 44px); line-height: 1.15; letter-spacing: -.025em; margin: 16px 0; overflow-wrap: anywhere; }
+.thank-you-page .confirmation-summary { box-shadow: 0 8px 32px #17211d08; }
+.thank-you-page .confirmation-summary h2 { font-size: 24px; margin: 10px 0 24px; }
+.thank-you-page .order-items { padding: 0; margin: 0 0 20px; list-style: none; }
+.thank-you-page .order-items li { display: flex; justify-content: space-between; align-items: start; gap: 20px; padding: 12px 0; border-bottom: 1px solid #e4e9e6; }
+.thank-you-page .order-items li span { min-width: 0; }
+.thank-you-page .order-items li strong { white-space: nowrap; }
+.thank-you-page .hero-cta { font: inherit; font-weight: 600; border: 0; }
