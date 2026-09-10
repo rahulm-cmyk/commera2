@@ -22,8 +22,15 @@ test('final COD validation trims names, accepts two letters, and rejects numeric
 });
 
 test('final COD validation rejects meaningless addresses and inactive products',()=>{
-  for(const address of ['test','abc','123']){const ctx=setup(),checkout=draft(ctx,{address});assert.throws(()=>ctx.service.placeCodOrder(ctx.store.id,{sessionId:checkout.id}),/complete delivery address/i);}
+  for(const address of ['test','abc','123']){const ctx=setup(),checkout=draft(ctx,{address});assert.throws(()=>ctx.service.placeCodOrder(ctx.store.id,{sessionId:checkout.id}),/enter your delivery address/i);}
   const ctx=setup(),checkout=draft(ctx);ctx.db.prepare('UPDATE products SET active=0 WHERE store_id=? AND id=?').run(ctx.store.id,ctx.product.id);assert.throws(()=>ctx.service.placeCodOrder(ctx.store.id,{sessionId:checkout.id}),/product is not active/i);
+});
+
+test('locality and landmark addresses do not require a house number', t => {
+  const ctx=setup();
+  t.after(()=>ctx.db.close());
+  const checkout=draft(ctx,{address:'siratram nagar naer bas ,stabd'});
+  assert.ok(ctx.service.placeCodOrder(ctx.store.id,{sessionId:checkout.id}).id);
 });
 
 test('recent duplicate protection checks same phone or same address for the same product',()=>{

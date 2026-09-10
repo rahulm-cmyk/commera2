@@ -2169,7 +2169,7 @@ export class CommerceService {
       throw new Error("Enter a valid email address");
     if (!meaningfulAddress(checkout.address))
       throw new Error(
-        "Enter a complete delivery address with enough information for delivery",
+        "Please enter your delivery address.",
       );
     if (!/^[\p{L} ]{2,}$/u.test(checkout.city))
       throw new Error("Enter a valid city using letters only");

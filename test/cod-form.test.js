@@ -64,7 +64,7 @@ test("Indian COD validation rejects invalid customer and delivery fields", () =>
     ["phone", "5123456789", /valid 10-digit Indian mobile/i],
     ["alternatePhone", "9876543210", /alternate mobile.*different/i],
     ["email", "not-an-email", /valid email/i],
-    ["address", "Short", /complete delivery address/i],
+    ["address", "Short", /enter your delivery address/i],
     ["city", "City 2", /valid city/i],
     ["state", "Unknown State", /valid Indian state/i],
     ["pincode", "012345", /valid 6-digit Indian pincode/i],
