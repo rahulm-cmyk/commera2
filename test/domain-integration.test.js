@@ -216,7 +216,7 @@ test("merchant UI exposes domain fields, statuses, and lifecycle actions", async
   t.after(() => app.stop());
   const base = `http://127.0.0.1:${app.port}`;
   let result = await request(base, "/");
-  assert.match(result.body, /data-view="settings">Settings/);
+  assert.match(result.body, /data-view="settings"><img[^>]*>Settings/);
   assert.doesNotMatch(result.body, /data-view="domains">Domains/);
   result = await request(base, "/app.js");
   assert.match(result.body, /\[\s*["']domain["']\s*,\s*["']Domain["']\s*\]/);

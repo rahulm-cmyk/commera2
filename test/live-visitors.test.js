@@ -89,7 +89,7 @@ test("one live visitor session moves through product view, add to cart, and chec
   );
   result = await call(base, "/live-visitors");
   assert.equal(result.response.status, 200);
-  assert.match(result.body, /data-view="visitors">Live Visitors/);
+  assert.match(result.body, /data-view="visitors"><img[^>]*>Live visitors/);
 });
 
 test("visitor privacy setting prevents new live sessions", async (t) => {

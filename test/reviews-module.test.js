@@ -263,7 +263,7 @@ test("Reviews dashboard supports filters, details, and store-isolated bulk moder
   assert.equal(r.body.summary.average, 4.5);
   const index = await call(base, "/"),
     script = await call(base, "/app.js");
-  assert.match(index.body, /data-view="reviews">Reviews/);
+  assert.match(index.body, /data-view="reviews"><img[^>]*>Reviews/);
   for (const text of [
     "Search reviews",
     "Pending",

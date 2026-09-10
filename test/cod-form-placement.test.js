@@ -15,7 +15,7 @@ test("merchant manages upsells and downsells inside COD Form, not Products", asy
   const base = `http://127.0.0.1:${app.port}`;
   const index = await text(base, "/");
   assert.equal(index.status, 200);
-  assert.match(index.body, /data-view="settings">Settings/);
+  assert.match(index.body, /data-view="settings"><img[^>]*>Settings/);
   assert.doesNotMatch(index.body, /data-view="cod-form">COD Form/);
 
   const script = await text(base, "/app.js");

@@ -1,4 +1,5 @@
 import { renderAccount, renderRecovery } from "./account.js";
+import { overviewMarkup, setupWorkspaceSearch } from './merchant-workspace.js';
 const $ = (selector) => document.querySelector(selector);
 const content = $("#content"),
   select = $("#store-select"),
@@ -732,18 +733,18 @@ function empty(message) {
   return `<div class="empty">${esc(message)}</div>`;
 }
 const pageDescriptions = {
-  home: "Your store performance at a glance.",
+  home: "A little clarity for your business, every day.",
   store: "Manage the complete customer-facing website for this business.",
   'online-store': 'Manage your website design, content pages and storefront preferences.',
-  products: "Manage products, inventory, offers, and connected selling pages.",
-  pages: "Create and manage the selling pages connected to your products.",
+  products: "Your products, prices and stock, all in one place.",
+  pages: "Design the product pages your customers shop from.",
   reviews: "Moderate and manage product reviews.",
   orders: "Review and manage customer orders.",
   customers: "Customers created from completed orders.",
   abandoned: "Recover checkout sessions that did not become orders.",
   visitors: "Watch real customers move from product view to cart and checkout.",
   policies: "Manage operational rules and customer-facing policies.",
-  settings: "Configure how this store, checkout, and tracking behave.",
+  settings: "Make your store work the way you do.",
 };
 function setPageHeader(description = pageDescriptions[view], actions = "") {
   const descriptionElement = $("#page-description"),
@@ -776,9 +777,9 @@ function render() {
   if (route.policyTab) policyTab = route.policyTab;
   const names = {
     account: "Account & Security",
-    home: "Overview",
+    home: "Home",
     store: "Store",
-    'online-store': 'Online Store',
+    'online-store': 'Store design',
     products: "Products",
     pages: "Product Pages",
     reviews: "Reviews",
@@ -790,6 +791,14 @@ function render() {
     settings: "Settings",
   };
   $("#page-title").textContent = names[view];
+  const workspaceName = $('#workspace-store-name'), workspaceLink = $('#workspace-store-link');
+  if (workspaceName) workspaceName.textContent = data?.store?.name || stores.find(store => store.id === storeId)?.name || 'Your account';
+  if (workspaceLink) {
+    if (data?.store) workspaceLink.href = storeUrl();
+    workspaceLink.hidden = !data?.storefrontPublication?.live;
+  }
+  content.classList.remove('route-enter');
+  requestAnimationFrame(() => content.classList.add('route-enter'));
   setPageHeader();
   document
     .querySelectorAll("nav button")
@@ -1204,17 +1213,12 @@ function storeView() {
 }
 
 function homeView() {
-  const canonical = data.pixels?.funnel || {},
-    funnel = [
-      ["Product page views", canonical.productPageViews || 0],
-      ["Added to cart", canonical.addToCart || 0],
-      ["Checkout started", canonical.checkoutStarted || 0],
-      ["OTP verified", canonical.otpVerified || 0],
-      ["Orders", canonical.orders || 0],
-      ["Abandoned checkouts", data.abandoned.length],
-    ];
-  setPageHeader("Real store performance and customer activity at a glance.");
-  content.innerHTML = `<div class="metrics">${metric("Total sales", rupees(data.metrics.totalSalesPaise), "From completed orders")}${metric("Orders", data.metrics.orders, "Successfully submitted")}${metric("Conversion rate", (canonical.conversionRate || 0) + "%", "Orders from product page views")}${metric("Live visitors", data.liveVisitors?.count || 0, "Active customer sessions")}</div><section class="panel"><div class="panel-head"><div><h2>Customer funnel</h2><span>All time · ${esc(data.store.currency)} · selected store</span></div></div><div class="overview-funnel">${funnel.map(([label, value]) => `<article><small>${label}</small><strong>${value}</strong></article>`).join("")}</div></section><section class="panel"><div class="panel-head"><div><h2>Recent Orders</h2><span>The latest completed customer orders.</span></div></div><div class="table-scroll">${ordersTable(data.orders.slice(0, 5))}</div></section>`;
+  setPageHeader('Your sales, your customers, your next step.');
+  content.innerHTML = overviewMarkup({ data, esc, money: rupees, storeUrl,
+    ordersHtml: ordersTable(data.orders.slice(0, 5)) });
+  content.querySelectorAll('[data-workspace-go]').forEach(button => {
+    button.onclick = () => navigateTo(button.dataset.workspaceGo).catch(error => toast(error.message));
+  });
   wireOrderDetailLinks(content);
 }
 const productTabs = [
@@ -3441,7 +3445,7 @@ function ordersView(){
     wireOrderTabs();
     return;
   }
-  content.innerHTML=`${tabs}<section class="orders-performance"><div class="orders-period"><label>Date range<select id="order-range"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7">Last 7 days</option><option value="last30">Last 30 days</option></select></label><span>${orderRangeLabel(orderRange)} · ${metrics.start||""}</span></div><div class="order-kpis">${[["Orders",metrics.orders],["Items ordered",metrics.itemsOrdered],["Sales reversals",rupees(metrics.salesReversalsPaise)],["Orders fulfilled",metrics.ordersFulfilled],["Orders delivered",metrics.ordersDelivered],["Order to fulfillment time",fulfillmentDuration(metrics.averageFulfillmentSeconds)]].map(([label,value])=>`<article><small>${label}</small><strong>${value}</strong></article>`).join("")}</div></section><section class="panel list-panel orders-shell"><div class="order-workspace-controls"><label class="search-field"><span>⌕</span><input id="order-search" type="search" placeholder="Search orders..." value="${esc(orderSearch)}"></label><select id="order-status-filter"><option value="all">Status: All</option>${options("fulfillmentStatus")}</select><select id="order-payment-filter"><option value="all">Payment: All</option>${options("paymentStatus")}</select><select id="order-delivery-filter"><option value="all">Delivery: All</option>${options("deliveryStatus")}</select><label>Sort by<select id="order-sort"><option value="date">Date</option><option value="orderNumber">Order number</option><option value="customer">Customer</option><option value="total">Total</option></select></label><select id="order-direction" aria-label="Sort direction"><option value="desc">Descending</option><option value="asc">Ascending</option></select><label class="toggle-row compact">Hide archived <input id="hide-archived" type="checkbox" ${prefs.hideArchived?"checked":""}></label>${orderColumnsMenu(prefs)}</div><div class="order-mobile-tools"><button class="secondary" id="order-filter-button" type="button">Filters</button></div><div class="order-toolbar" hidden><strong id="selected-orders-count">0 orders selected</strong><input id="bulk-order-tags" placeholder="VIP, Priority"><button class="secondary" id="apply-order-tags" disabled>Add Tags</button><button class="secondary" id="archive-selected" disabled>Archive</button></div>${orders.length?`<div class="order-desktop-results table-scroll">${ordersTable(orders,{selectable:true,preferences:prefs})}</div><div class="order-mobile-list">${orders.map(orderMobileCard).join("")}</div>`:empty("No orders match these filters.")}</section>`;
+  content.innerHTML=`${tabs}<section class="orders-performance"><div class="orders-period"><label>Date range<select id="order-range"><option value="today">Today</option><option value="yesterday">Yesterday</option><option value="last7">Last 7 days</option><option value="last30">Last 30 days</option></select></label><span>${orderRangeLabel(orderRange)} · ${metrics.start||""}</span></div><div class="order-kpis">${[["Orders",metrics.orders],["Items ordered",metrics.itemsOrdered],["Sales reversals",rupees(metrics.salesReversalsPaise)],["Orders fulfilled",metrics.ordersFulfilled],["Orders delivered",metrics.ordersDelivered],["Order to fulfillment time",fulfillmentDuration(metrics.averageFulfillmentSeconds)]].map(([label,value])=>`<article><small>${label}</small><strong>${value}</strong></article>`).join("")}</div></section><section class="panel list-panel orders-shell"><div class="order-workspace-controls"><label class="search-field"><span>⌕</span><input id="order-search" aria-label="Search orders" type="search" placeholder="Search orders..." value="${esc(orderSearch)}"></label><select id="order-status-filter" aria-label="Filter by fulfillment status"><option value="all">Status: All</option>${options("fulfillmentStatus")}</select><select id="order-payment-filter" aria-label="Filter by payment status"><option value="all">Payment: All</option>${options("paymentStatus")}</select><select id="order-delivery-filter" aria-label="Filter by delivery status"><option value="all">Delivery: All</option>${options("deliveryStatus")}</select><label>Sort by<select id="order-sort"><option value="date">Date</option><option value="orderNumber">Order number</option><option value="customer">Customer</option><option value="total">Total</option></select></label><select id="order-direction" aria-label="Sort direction"><option value="desc">Descending</option><option value="asc">Ascending</option></select><label class="toggle-row compact">Hide archived <input id="hide-archived" type="checkbox" ${prefs.hideArchived?"checked":""}></label>${orderColumnsMenu(prefs)}</div><div class="order-mobile-tools"><button class="secondary" id="order-filter-button" type="button">Filters</button></div><div class="order-toolbar" hidden><strong id="selected-orders-count">0 orders selected</strong><input id="bulk-order-tags" placeholder="VIP, Priority"><button class="secondary" id="apply-order-tags" disabled>Add Tags</button><button class="secondary" id="archive-selected" disabled>Archive</button></div>${orders.length?`<div class="order-desktop-results table-scroll">${ordersTable(orders,{selectable:true,preferences:prefs})}</div><div class="order-mobile-list">${orders.map(orderMobileCard).join("")}</div>`:empty("No orders match these filters.")}</section>`;
   wireOrderTabs();$("#create-order").onclick=openManualOrderForm;$("#top-archive-selected").onclick=()=>$("#archive-selected")?.click();$("#order-range").insertAdjacentHTML("beforeend",'<option value="custom">Custom range</option>');$("#order-range").value=orderRange;$("#order-status-filter").value=orderStatus;$("#order-payment-filter").value=orderPayment;$("#order-delivery-filter").value=orderDelivery;$("#order-sort").value=prefs.sortField;$("#order-direction").value=prefs.sortDirection;let searchTimer;$("#order-search").oninput=(event)=>{clearTimeout(searchTimer);orderSearch=event.target.value;searchTimer=setTimeout(refreshOrdersWorkspace,250)};[$("#order-status-filter"),$("#order-payment-filter"),$("#order-delivery-filter")].forEach((control)=>control.onchange=()=>{orderStatus=$("#order-status-filter").value;orderPayment=$("#order-payment-filter").value;orderDelivery=$("#order-delivery-filter").value;refreshOrdersWorkspace();});$("#order-range").onchange=(event)=>{if(event.target.value==="custom")return openOrderCustomRange();orderRange=event.target.value;orderRangeStart="";orderRangeEnd="";refreshOrdersWorkspace();};const savePrefs=(patch)=>api(`/api/stores/${storeId}/orders/preferences`,{method:"PATCH",body:JSON.stringify(patch)}).then(()=>load()).catch((error)=>toast(error.message));$("#order-sort").onchange=()=>savePrefs({sortField:$("#order-sort").value});$("#order-direction").onchange=()=>savePrefs({sortDirection:$("#order-direction").value});$("#hide-archived").onchange=()=>savePrefs({hideArchived:$("#hide-archived").checked});document.querySelectorAll("[data-toggle-order-column]").forEach((button)=>button.onclick=()=>savePrefs({visibleColumns:prefs.visibleColumns.includes(button.dataset.toggleOrderColumn)?prefs.visibleColumns.filter((key)=>key!==button.dataset.toggleOrderColumn):[...prefs.visibleColumns,button.dataset.toggleOrderColumn]}));let dragged=null;document.querySelectorAll("[data-order-column]").forEach((item)=>{item.ondragstart=()=>dragged=item.dataset.orderColumn;item.ondragover=(event)=>event.preventDefault();item.ondrop=()=>{const next=prefs.columnOrder.filter((key)=>key!==dragged),at=next.indexOf(item.dataset.orderColumn);next.splice(at,0,dragged);savePrefs({columnOrder:next});};});$("#order-filter-button").onclick=showOrderMobileFilters;wireOrderWorkspaceActions();
 }
 function wireOrderTabs(){document.querySelectorAll("[data-order-section]").forEach((button)=>button.onclick=()=>{orderSection=button.dataset.orderSection;ordersView();});}
@@ -5649,13 +5653,13 @@ const simplifiedProductPages = (() => {
     const productRows = data.products
         .map(
           (product) =>
-            `<tr data-product-row data-search="${esc(`${product.name} ${product.slug}`.toLowerCase())}"><td><strong>${esc(product.name)}</strong><br><small>/${esc(product.slug)}</small></td><td>${rupees(product.pricePaise)}${product.comparePricePaise ? `<br><small><s>${rupees(product.comparePricePaise)}</s></small>` : ""}</td><td>${product.stock}</td><td><span class="status-badge ${product.active ? "is-active" : "is-draft"}">${product.active ? "Active" : "Draft"}</span></td><td class="row-menu-cell"><details class="row-menu"><summary aria-label="Actions for ${esc(product.name)}">⋯</summary><div><button class="edit-product" data-id="${product.id}" type="button">Edit Product</button><button class="product-page-action" data-product="${product.id}" type="button">Manage Pages</button></div></details></td></tr>`,
+            `<tr data-product-row data-search="${esc(`${product.name} ${product.slug}`.toLowerCase())}"><td><button type="button" class="edit-product product-name-action" data-id="${product.id}">${esc(product.name)}</button><br><small>/${esc(product.slug)}</small></td><td>${rupees(product.pricePaise)}${product.comparePricePaise ? `<br><small><s>${rupees(product.comparePricePaise)}</s></small>` : ""}</td><td>${product.stock}</td><td><span class="status-badge ${product.active ? "is-active" : "is-draft"}">${product.active ? "Active" : "Draft"}</span></td><td class="row-menu-cell"><details class="row-menu"><summary aria-label="Actions for ${esc(product.name)}">⋯</summary><div><button class="edit-product" data-id="${product.id}" type="button">Edit Product</button><button class="product-page-action" data-product="${product.id}" type="button">Manage Pages</button></div></details></td></tr>`,
         )
         .join(""),
       productCards = data.products
         .map(
           (product) =>
-            `<article class="product-mobile-card" data-product-row data-search="${esc(`${product.name} ${product.slug}`.toLowerCase())}"><header><div><strong>${esc(product.name)}</strong><small>/${esc(product.slug)}</small></div><details class="row-menu"><summary aria-label="Actions for ${esc(product.name)}">⋯</summary><div><button class="edit-product" data-id="${product.id}" type="button">Edit Product</button><button class="product-page-action" data-product="${product.id}" type="button">Manage Pages</button></div></details></header><dl><div><dt>Price</dt><dd>${rupees(product.pricePaise)}</dd></div><div><dt>Inventory</dt><dd>${product.stock}</dd></div><div><dt>Status</dt><dd><span class="status-badge ${product.active ? "is-active" : "is-draft"}">${product.active ? "Active" : "Draft"}</span></dd></div></dl></article>`,
+            `<article class="product-mobile-card" data-product-row data-search="${esc(`${product.name} ${product.slug}`.toLowerCase())}"><header><div><button type="button" class="edit-product product-name-action" data-id="${product.id}">${esc(product.name)}</button><small>/${esc(product.slug)}</small></div><details class="row-menu"><summary aria-label="Actions for ${esc(product.name)}">⋯</summary><div><button class="edit-product" data-id="${product.id}" type="button">Edit Product</button><button class="product-page-action" data-product="${product.id}" type="button">Manage Pages</button></div></details></header><dl><div><dt>Price</dt><dd>${rupees(product.pricePaise)}</dd></div><div><dt>Inventory</dt><dd>${product.stock}</dd></div><div><dt>Status</dt><dd><span class="status-badge ${product.active ? "is-active" : "is-draft"}">${product.active ? "Active" : "Draft"}</span></dd></div></dl></article>`,
         )
         .join("");
     el.innerHTML = `<section class="panel list-panel"><div class="table-toolbar"><label class="search-field"><span aria-hidden="true">⌕</span><input id="product-search" type="search" aria-label="Search products" placeholder="Search products..."></label></div>${
@@ -5664,11 +5668,24 @@ const simplifiedProductPages = (() => {
         : empty("No products yet. Add a product first.")
     }</section>`;
     $("#header-add-product").onclick = () => navigateTo("/products/new");
+    const resultCount = document.createElement('small');
+    resultCount.className = 'product-result-count';
+    resultCount.setAttribute('role', 'status');
+    resultCount.textContent = `${data.products.length} products`;
+    el.querySelector('.table-toolbar').append(resultCount);
+    const noMatches = document.createElement('p');
+    noMatches.className = 'empty';
+    noMatches.textContent = 'No matching products. Try a different name.';
+    noMatches.hidden = true;
+    el.querySelector('.list-panel').append(noMatches);
     $("#product-search").oninput = (event) => {
       const query = event.target.value.trim().toLowerCase();
       document.querySelectorAll("[data-product-row]").forEach((row) => {
         row.hidden = query && !row.dataset.search.includes(query);
       });
+      const count = data.products.filter(product => `${product.name} ${product.slug}`.toLowerCase().includes(query)).length;
+      resultCount.textContent = `${count} ${count === 1 ? 'product' : 'products'}`;
+      noMatches.hidden = !data.products.length || count > 0;
     };
     document
       .querySelectorAll(".edit-product")
@@ -7782,6 +7799,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 $("#new-store").onclick = newStore;
+setupWorkspaceSearch({ document, navigate: path => { closeSidebar(); return navigateTo(path); }, onError: error => toast(error.message) });
 function updateAccountIdentity(user) {
   merchantIdentity = user;
   $("#account-name").textContent = user.displayName;

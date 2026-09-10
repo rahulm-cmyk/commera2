@@ -135,7 +135,7 @@ test("merchant configures a delivery partner, dispatches an order, and tracks st
   assert.equal(result.response.status, 404);
 
   const index = await request(base, "/");
-  assert.match(index.body, /data-view="settings">Settings/);
+  assert.match(index.body, /data-view="settings"><img[^>]*>Settings/);
   assert.doesNotMatch(index.body, /data-view="delivery">Delivery/);
   const script = await request(base, "/app.js");
   assert.match(

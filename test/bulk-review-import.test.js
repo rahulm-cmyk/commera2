@@ -258,7 +258,7 @@ test("merchant Reviews UI exposes the complete staged bulk upload workflow and h
   await setup(base);
   const index = await call(base, "/"),
     script = await call(base, "/app.js");
-  assert.match(index.body, /data-view="reviews">Reviews/);
+  assert.match(index.body, /data-view="reviews"><img[^>]*>Reviews/);
   for (const text of [
     "Bulk Upload",
     "Bulk Import Reviews",

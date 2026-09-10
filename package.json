@@ -6,6 +6,8 @@
   "scripts": {
     "start": "node src/server.js",
     "smoke:server": "node scripts/browser-smoke-server.js",
+    "preview:ui": "node scripts/merchant-ui-preview.mjs",
+    "ui:icons": "node scripts/sync-ui-icons.mjs",
     "migrate:postgres": "node src/migrate-sqlite-to-postgres.js",
     "test": "node --test",
     "check": "node --check src/server.js && node --test"
@@ -17,5 +19,8 @@
     "google-auth-library": "^10.9.1",
     "pg": "^8.23.0",
     "sanitize-html": "^2.17.7"
+  },
+  "devDependencies": {
+    "lucide-static": "1.43.0"
   }
 }

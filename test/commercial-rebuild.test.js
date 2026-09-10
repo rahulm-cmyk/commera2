@@ -42,7 +42,7 @@ async function setup(base) {
   return { store, product, page };
 }
 
-test("commercial navigation keeps abandoned checkout inside Orders and groups live visitors under Analytics", async (t) => {
+test("commercial navigation keeps abandoned checkout inside Orders and groups live visitors under Business", async (t) => {
   const app = createApp({ db: createDatabase(":memory:"), port: 0 });
   await app.start();
   t.after(() => app.stop());
@@ -50,10 +50,11 @@ test("commercial navigation keeps abandoned checkout inside Orders and groups li
     index = await call(base, "/"),
     script = await call(base, "/app.js");
   assert.doesNotMatch(index.body, /data-view="abandoned"/);
-  assert.match(index.body, /Analytics[\s\S]*data-view="visitors"/);
+  assert.match(index.body, /Business[\s\S]*data-view="visitors"/);
   assert.match(script.body, /Abandoned Checkouts/);
-  assert.match(script.body, /Live visitors/);
-  assert.match(script.body, /Customer funnel/);
+  assert.match(index.body, /Live visitors/);
+  const workspace = await call(base, '/merchant-workspace.js');
+  assert.match(workspace.body, /Customer journey/);
   assert.match(script.body, /Save before leaving\?/);
   assert.match(script.body, /#back-pages"\)\.onclick = \(\) => navigateTo\("\/product-pages"\)/);
   assert.match(script.body, /status\.textContent = "Unsaved changes"/);

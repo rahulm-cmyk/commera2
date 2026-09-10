@@ -3937,10 +3937,19 @@ export function createApp({
         }
       }
       if (req.method === "GET") {
+        if (/^\/icons\/[a-z0-9-]+\.svg$/.test(path)) {
+          let icon;
+          try { icon = await readFile(join(root, path.slice(1))); }
+          catch (error) { if (error.code === 'ENOENT') return json(res, 404, { error: 'Icon not found' }); throw error; }
+          res.writeHead(200, { 'content-type': 'image/svg+xml', 'cache-control': 'public, max-age=86400' });
+          return res.end(icon);
+        }
         const files = {
           "/": "index.html",
           "/app.js": "app.js",
           "/account.js": "account.js",
+          "/merchant-workspace.js": "merchant-workspace.js",
+          "/merchant-ui.css": "merchant-ui.css",
           "/otp-checkout.js": "otp-checkout.js",
           "/styles.css": "styles.css",
           "/reviews-ui.css": "reviews-ui.css",

@@ -194,7 +194,7 @@ test("pixel IDs are platform-validated and merchant UI exposes fields, statuses,
   assert.equal(result.response.status, 400);
   assert.match(result.body.error, /public HTTPS host|valid Custom/i);
   result = await request(base, "/");
-  assert.match(result.body, /data-view="settings">Settings/);
+  assert.match(result.body, /data-view="settings"><img[^>]*>Settings/);
   assert.doesNotMatch(result.body, /data-view="pixels">Pixel Setup/);
   result = await request(base, "/app.js");
   assert.match(result.body, /\[\s*["']pixel["']\s*,\s*["']Pixel["']\s*\]/);
