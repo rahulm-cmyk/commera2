@@ -1,0 +1,20 @@
+import { createDatabase } from '../src/database.js';
+import { createApp } from '../src/server.js';
+import { CommerceService } from '../src/commerce-service.js';
+import { StorefrontService } from '../src/storefront-service.js';
+
+const db = createDatabase(':memory:');
+const commerce = new CommerceService(db);
+const storefront = new StorefrontService(db);
+const store = commerce.createStore({ name: 'Draft regression QA', slug: 'draft-qa' });
+const product = commerce.createProduct(store.id, { name: 'Public product', slug: 'public-product', pricePaise: 10000, stock: 10 });
+const page = commerce.createProductPage(store.id, { productId: product.id, title: 'Public offer', slug: 'public-offer', body: 'Public product page' });
+commerce.publishPage(store.id, page.id);
+const draft = commerce.createProduct(store.id, { name: 'Unpublished product', slug: 'draft-product', pricePaise: 20000, stock: 5 });
+const png = { name: 'qa.png', type: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' };
+storefront.saveBranding(store.id, { logo: png });
+storefront.saveHome(store.id, { bannerImage: png, bannerHeading: 'Saved QA banner', featuredProductIds: [product.id, draft.id] });
+const app = createApp({ db, port: 4198, domainSyncIntervalMs: 0 });
+await app.start();
+console.log(`Isolated storefront QA: http://127.0.0.1:${app.port}/online-store/themes/current/edit`);
+process.on('SIGINT', async () => { await app.stop(); process.exit(0); });

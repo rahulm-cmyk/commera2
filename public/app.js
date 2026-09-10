@@ -1147,14 +1147,21 @@ function storeView() {
     });
   };
   let identityDirty = false, homeDirty = false;
+  const showStoreSaveError = (error) => {
+    const status = $("#store-save-error");
+    status.textContent = error.message;
+    status.hidden = false;
+    toast(error.message);
+  };
   const saveStoreDraft = async () => {
+    $("#store-save-error").hidden = true;
     try {
       if (identityDirty) await saveIdentity();
       if (homeDirty) await saveHome();
       data = await api(`/api/stores/${storeId}/dashboard`);
       identityDirty = homeDirty = productPageDirty = false;
       return true;
-    } catch (error) { toast(error.message); return false; }
+    } catch (error) { showStoreSaveError(error); return false; }
   };
   identityForm.oninput = () => { identityDirty = productPageDirty = true; productPageSaveHandler = saveStoreDraft; };
   homeForm.oninput = () => { homeDirty = productPageDirty = true; productPageSaveHandler = saveStoreDraft; };
@@ -1176,7 +1183,7 @@ function storeView() {
       toast("Store published");
       await load();
     } catch (error) {
-      toast(error.message);
+      showStoreSaveError(error);
     }
   };
   // Keep draft and publication controls accessible from every section.
@@ -1188,6 +1195,12 @@ function storeView() {
   saveDraftButton.dataset.storeSaveAll = '';
   saveDraftButton.onclick = async () => { if (await saveStoreDraft()) { toast("Store draft saved"); await load(); } };
   previewToolbar.append(saveDraftButton, $("#publish-store-home"));
+  const saveError = document.createElement("p");
+  saveError.id = "store-save-error";
+  saveError.className = "notice domain-error";
+  saveError.setAttribute("role", "alert");
+  saveError.hidden = true;
+  $(".store-workspace").before(saveError);
 }
 
 function homeView() {

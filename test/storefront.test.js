@@ -2,6 +2,8 @@ import test from "node:test";
 import assert from "node:assert/strict";
 import { createDatabase } from "../src/database.js";
 import { createApp } from "../src/server.js";
+import { DomainService } from '../src/domain-service.js';
+import { request } from 'node:http';
 async function call(base, path, method = "GET", data) {
   const response = await fetch(base + path, {
       method,
@@ -24,6 +26,64 @@ const gif = {
   type: "image/gif",
   data: "R0lGODlhAQABAIAAAAAAAP///ywAAAAAAQABAAACAUwAOw==",
 };
+
+test('homepage drafts save incomplete products and directly published pages work without a second publication', async (t) => {
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, port: 0, domainSyncIntervalMs: 0 });
+  await app.start();
+  t.after(() => app.stop());
+  const base = `http://127.0.0.1:${app.port}`;
+  const { store, product, page } = await setup(base, 'draft-regression');
+  const path = `/api/stores/${store.id}/storefront`;
+  await call(base, `${path}/branding`, 'PATCH', { logo: png });
+  let r = await call(base, `${path}/home`, 'PATCH', { bannerImage: png, featuredProductIds: [], buttonTarget: { type: 'product', id: 0 } });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.status, 'draft');
+  r = await call(base, `${path}/home`, 'PATCH', { featuredProductIds: [product.id], bannerHeading: 'Saved draft', buttonText: 'Shop', buttonTarget: { type: 'product', id: product.id } });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.featuredProducts[0].productPageStatus, 'published');
+  r = await call(base, `${path}/home/publish`, 'POST', {});
+  assert.equal(r.response.status, 200, JSON.stringify(r.body));
+  r = await call(base, `/s/${store.slug}/products/${product.slug}`);
+  assert.equal(r.response.status, 200);
+  const domains = new DomainService(db, { cnameTarget: 'edge.example.com' });
+  const domain = domains.addDomain(store.id, { domainName: 'qa.example' });
+  db.prepare("UPDATE custom_domains SET overall_status='ACTIVE' WHERE id=?").run(domain.id);
+  const custom = await new Promise((resolve, reject) => {
+    const req = request(`${base}/products/${product.slug}`, { headers: { host: 'qa.example' } }, res => {
+      res.resume(); res.on('end', () => resolve(res.statusCode));
+    });
+    req.on('error', reject); req.end();
+  });
+  assert.equal(custom, 200, 'custom domains must resolve the same published product page');
+  domains.disconnect(store.id, domain.id);
+
+  const draftProduct = (await call(base, `/api/stores/${store.id}/products`, 'POST', { name: 'Draft Only', slug: 'draft-only', pricePaise: 10000, stock: 2 })).body;
+  r = await call(base, `${path}/home`, 'PATCH', { featuredProductIds: [draftProduct.id], bannerHeading: 'Unpublished changes' });
+  assert.equal(r.response.status, 200);
+  r = await call(base, `${path}/home`, 'PATCH', { bannerSubheading: 'Partial update keeps selection' });
+  assert.equal(r.body.featuredProducts[0].id, draftProduct.id);
+  r = await call(base, `${path}/home/publish`, 'POST', {});
+  assert.equal(r.response.status, 400);
+  assert.match(r.body.error, /Draft Only/);
+  assert.match(r.body.error, /draft is saved/);
+  r = await call(base, `/s/${store.slug}`);
+  assert.match(r.body, /Saved draft/);
+  assert.doesNotMatch(r.body, /Unpublished changes/);
+
+  const other = await setup(base, 'foreign-regression');
+  r = await call(base, `${path}/home`, 'PATCH', { featuredProductIds: [other.product.id] });
+  assert.equal(r.response.status, 400);
+  // An explicit draft connection must not silently select another public page.
+  db.prepare("INSERT INTO product_storefronts (store_id,product_id,page_id,status,description_html,button_text) VALUES (?,?,?,'draft','','Buy Now')").run(store.id, product.id, page.id);
+  r = await call(base, `${path}/home`, 'PATCH', { featuredProductIds: [product.id] });
+  assert.equal(r.body.featuredProducts[0].productPageStatus, 'draft');
+  r = await call(base, `${path}/products/${product.id}/page`, 'PATCH', { pageId: page.id });
+  assert.equal(r.response.status, 200);
+  assert.equal(r.body.status, 'published');
+  r = await call(base, `${path}/home/publish`, 'POST', {});
+  assert.equal(r.response.status, 200, JSON.stringify(r.body));
+});
 async function setup(base, slug = "nivkara") {
   let r = await call(base, "/api/stores", "POST", {
       name: slug === "nivkara" ? "Nivkara" : "Other Store",
@@ -318,6 +378,8 @@ test("required storefront media and featured product constraints block incomplet
     "PATCH",
     { bannerImage: png, featuredProductIds: [] },
   );
+  assert.equal(r.response.status, 200);
+  r = await call(base, `/api/stores/${main.store.id}/storefront/home/publish`, "POST", {});
   assert.equal(r.response.status, 400);
   assert.match(r.body.error, /Select at least one product/);
   r = await call(

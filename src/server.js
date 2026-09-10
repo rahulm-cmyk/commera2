@@ -3524,13 +3524,10 @@ export function createApp({
         match = path.match(/^\/products\/([^/]+)$/);
         if (match) {
           try {
-            const canonical = db.prepare(
-              `SELECT ps.page_id,ps.status,pp.slug page_slug FROM products p
-               JOIN stores s ON s.id=p.store_id
-               LEFT JOIN product_storefronts ps ON ps.product_id=p.id AND ps.store_id=p.store_id
-               LEFT JOIN product_pages pp ON pp.id=ps.page_id AND pp.deleted_at IS NULL
-               WHERE s.slug=? AND p.slug=? AND p.active=1`,
-            ).get(storeSlug, decodeURIComponent(match[1]));
+            const productRow = db.prepare('SELECT id FROM products WHERE store_id=? AND slug=? AND active=1')
+              .get(resolvedDomain.storeId, decodeURIComponent(match[1]));
+            const linked = productRow && storefront.getProduct(resolvedDomain.storeId, productRow.id);
+            const canonical = linked && { status: linked.status, page_slug: linked.pageSlug };
             if (canonical && (canonical.status !== "published" || !canonical.page_slug))
               throw Error("Published product storefront not found");
             const published = service.getPublishedPage(

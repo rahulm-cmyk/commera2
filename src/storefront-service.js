@@ -316,6 +316,8 @@ export class StorefrontService {
       .all(storeId)
       .map((raw) => {
         const item = row(raw);
+        const linked = this.getProduct(storeId, item.id);
+        item.productPageStatus = linked.status === "published" && linked.pageStatus === "published" && item.active !== 0 ? "published" : "draft";
         item.mainImage = item.mainData
           ? {
               name: item.mainFileName || "product-image",
@@ -513,7 +515,7 @@ export class StorefrontService {
 
   getProduct(storeId, productId) {
     const product = this.#product(storeId, productId);
-    const value = this.db
+    let value = this.db
       .prepare(
         `
         SELECT ps.*,pp.slug page_slug,pp.status page_status
@@ -524,6 +526,16 @@ export class StorefrontService {
       `,
       )
       .get(storeId, product.id);
+
+    // A directly published Product Page is usable without a second storefront setup.
+    // Never replace an explicit connection, including one deliberately left as a draft.
+    if (!value && !this.db.prepare('SELECT product_id FROM product_storefronts WHERE store_id=? AND product_id=?').get(storeId, product.id)) {
+      const page = this.db.prepare(`SELECT id,slug,published_at FROM product_pages
+        WHERE store_id=? AND product_id=? AND status='published' AND deleted_at IS NULL
+        ORDER BY published_at DESC,id DESC LIMIT 1`).get(storeId, product.id);
+      if (page) value = { status: 'published', page_id: page.id, page_slug: page.slug,
+        page_status: 'published', published_at: page.published_at, description_html: product.description || '' };
+    }
 
     return {
       ...product,
@@ -558,11 +570,16 @@ export class StorefrontService {
   }
 
   connectPage(storeId, productId, pageId) {
+    const product = this.#product(storeId, productId);
+    const page = this.db.prepare("SELECT id FROM product_pages WHERE store_id=? AND product_id=? AND id=? AND status='published' AND deleted_at IS NULL")
+      .get(storeId, product.id, Number(pageId));
+    if (!page) throw Error('Connected checkout page must be published and belong to this product and store');
     const current = this.getProduct(storeId, productId);
-    return this.saveProduct(storeId, productId, {
-      description: current.description || this.#product(storeId, productId).description,
-      publish: current.status === "published",
-    }, pageId);
+    this.db.prepare(`INSERT INTO product_storefronts (product_id,store_id,page_id,description_html,button_text,button_action,status,published_at)
+      VALUES (?,?,?,?,?,?,'published',CURRENT_TIMESTAMP) ON CONFLICT(product_id) DO UPDATE SET
+      page_id=excluded.page_id,status='published',published_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP`)
+      .run(product.id, storeId, page.id, current.description || product.description || '', current.buttonText, current.buttonAction);
+    return this.getProduct(storeId, productId);
   }
 
   saveProductMedia(storeId, productId, input = {}) {
@@ -787,21 +804,13 @@ export class StorefrontService {
 
     const featuredIds = [
       ...new Set(
-        (input.featuredProductIds || [])
+        (input.featuredProductIds ?? this.get(storeId).home.featuredProducts.map(item => item.id))
           .map((value) => Number(value))
           .filter((value) => Number.isInteger(value) && value > 0),
       ),
     ];
-    if (!featuredIds.length)
-      throw Error("Select at least one product for the homepage");
-
     featuredIds.forEach((id) => {
       this.#product(storeId, id);
-      const product = this.getProduct(storeId, id);
-      if (product.status !== "published" || product.pageStatus !== "published" || product.active === 0)
-        throw Error(
-          "Every featured product must have a published Product Page",
-        );
     });
 
     const target =
@@ -820,26 +829,24 @@ export class StorefrontService {
       const targetId = Number(target.id);
       if (
         clean(target.type) !== "url" &&
-        (!Number.isInteger(targetId) || targetId <= 0)
+        target.id && (!Number.isInteger(targetId) || targetId <= 0)
       )
         throw Error("Banner Button Link must be valid");
-      if (clean(target.type) === "product") {
-        const product = this.getProduct(storeId, targetId);
-        if (product.status !== "published" || product.pageStatus !== "published" || product.active === 0)
-          throw Error("Banner Button Link product must have a published page in this store");
-      } else if (clean(target.type) === "page") {
+      if (clean(target.type) === "product" && targetId) {
+        this.#product(storeId, targetId);
+      } else if (clean(target.type) === "page" && targetId) {
         const page = this.db
           .prepare(
-            "SELECT id FROM product_pages WHERE store_id=? AND id=? AND status='published' AND deleted_at IS NULL",
+            "SELECT id FROM product_pages WHERE store_id=? AND id=? AND deleted_at IS NULL",
           )
           .get(storeId, targetId);
         if (!page)
           throw Error(
-            "Banner Button Link page must be published in this store",
+            "Banner Button Link page must belong to this store",
           );
       }
       if (clean(target.type) === "url")
-        target.url = publicUrl(target.url, { optional: false });
+        target.url = publicUrl(target.url);
     }
 
     const announcementEnabled = Boolean(
@@ -870,10 +877,6 @@ export class StorefrontService {
       footerShowProducts = Boolean(
         input.footerShowProducts ?? current.footerShowProducts,
       );
-    if (announcementEnabled && !announcementMessage)
-      throw Error("Announcement Message is required when enabled");
-    if (announcementLinkText && !announcementLinkUrl)
-      throw Error("Announcement Link is required when link text is set");
     if (footerContact.length > 500)
       throw Error("Footer contact information must be 500 characters or fewer");
 
@@ -959,12 +962,25 @@ export class StorefrontService {
       throw Error("Banner Image is required before publishing");
     if (!model.home.featuredProducts.length)
       throw Error("Select at least one product for the homepage");
-    if (
-      model.home.featuredProducts.some(
-        (item) => item.productPageStatus !== "published",
-      )
-    ) {
-      throw Error("Every featured product must have a published Product Page");
+    const unavailable = model.home.featuredProducts.filter(item => item.productPageStatus !== "published");
+    if (unavailable.length)
+      throw Error(`Cannot publish store: ${unavailable.map(item => item.name).join(', ')} must be active and connected to a published Product Page. Your draft is saved.`);
+    const settings = row(this.#settings(storeId));
+    if (settings.announcementEnabled && !settings.announcementMessage)
+      throw Error("Announcement Message is required when enabled. Your draft is saved.");
+    if (settings.announcementLinkText && !settings.announcementLinkUrl)
+      throw Error("Announcement Link is required when link text is set. Your draft is saved.");
+    if (settings.buttonText) {
+      if (settings.buttonTargetType === 'product') {
+        const product = settings.buttonTargetId && this.getProduct(storeId, settings.buttonTargetId);
+        if (!product || product.status !== 'published' || product.pageStatus !== 'published' || product.active === 0)
+          throw Error('Banner Button Link needs an active product with a published page. Your draft is saved.');
+      } else if (settings.buttonTargetType === 'page') {
+        const page = this.db.prepare("SELECT pp.id FROM product_pages pp JOIN products p ON p.id=pp.product_id AND p.store_id=pp.store_id WHERE pp.store_id=? AND pp.id=? AND pp.status='published' AND pp.deleted_at IS NULL AND p.active=1").get(storeId, settings.buttonTargetId);
+        if (!page) throw Error('Banner Button Link needs a published page in this store. Your draft is saved.');
+      } else if (settings.buttonTargetType !== 'url' || !settings.buttonTargetUrl) {
+        throw Error('Choose a Banner Button Link before publishing. Your draft is saved.');
+      }
     }
 
     this.db.exec('BEGIN IMMEDIATE');
