@@ -11,10 +11,10 @@
   </head>
   <body>
     <aside id="app-sidebar" class="app-sidebar" aria-label="Merchant workspace">
-      <div class="brand">
+      <a class="brand" id="brand-home" href="/overview" aria-label="Commera2 home">
         <i>C2</i>
         <div><strong>Commera2</strong><small>COD Commerce</small></div>
-      </div>
+      </a>
       <label class="store-label"
         >ACTIVE STORE<select id="store-select"></select
       ></label>
@@ -37,6 +37,7 @@
         <button data-view="settings">Settings</button>
       </nav>
       <div class="sidebar-actions">
+        <a id="account-link" class="account-link" href="/account"><strong id="account-name">Your account</strong><span id="account-email"></span><small>Account &amp; security</small></a>
         <button id="new-store" class="outline">+ New store</button>
         <button id="logout" class="outline">Sign out</button>
       </div>
@@ -57,7 +58,7 @@
           aria-expanded="false"
         >
           ☰</button
-        ><strong id="mobile-store-name">Store</strong>
+        ><a id="mobile-brand-home" href="/overview">Commera2</a><a id="mobile-account-link" href="/account" aria-label="Account and security">Account</a><strong id="mobile-store-name" hidden>Store</strong>
       </div>
       <header class="page-header">
         <div>

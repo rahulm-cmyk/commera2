@@ -29,6 +29,7 @@ import { OtpProviderConfigService } from "./otp-provider-config-service.js";
 import { BotProtectionService } from "./bot-protection-service.js";
 import { AuthService } from "./auth-service.js";
 import { createGoogleAuthProvider } from "./google-auth-provider.js";
+import { createAccountEmailProvider } from "./account-email.js";
 import { pageTemplates } from "./page-templates.js";
 import { renderBlocks, blockSectionStyle } from '../public/page-blocks.js';
 import { confirmationAnimation, orderConfirmation, confirmationIcon } from "./confirmation.js";
@@ -1056,6 +1057,7 @@ export function createApp({
   authOptions = {},
   googleAuthProvider,
   oauthStateSecret,
+  accountEmailProvider = createAccountEmailProvider(),
 } = {}) {
   const settingsService = new SettingsService(db);
   const shipping = new ShippingService(db);
@@ -1157,7 +1159,9 @@ export function createApp({
       limit: 5,
       windowMs: 60 * 60_000,
     }),
-    domainCheckLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 });
+    domainCheckLimiter = createRateLimiter({ limit: 10, windowMs: 60_000 }),
+    recoveryLimiter = createRateLimiter({ limit: 8, windowMs: 15 * 60_000 }),
+    securityLimiter = createRateLimiter({ limit: 8, windowMs: 15 * 60_000 });
   let actualPort = port,
     domainSyncTimer = null;
   const server = createServer(async (req, res) => {
@@ -1230,9 +1234,36 @@ export function createApp({
       }
       if (path === "/api/auth/google/status" && req.method === "GET")
         return json(res, 200, { enabled: Boolean(merchantAuth && googleAuth) });
+      if (path === "/api/auth/recovery/status" && req.method === "GET")
+        return json(res, 200, { enabled: Boolean(merchantAuth && accountEmailProvider) });
+      if (["/api/auth/forgot-password", "/api/auth/reset-password"].includes(path) && req.method === "POST") {
+        if (!merchantAuth) return json(res, 404, { error: "Authentication is not enabled" });
+        const input = await body(req),
+          rate = recoveryLimiter.take(String(req.socket.remoteAddress || "unknown"));
+        if (!rate.allowed) {
+          res.setHeader("retry-after", String(rate.retryAfter));
+          return json(res, 429, { error: "Too many recovery attempts. Try again later" });
+        }
+        if (path.endsWith("/reset-password")) return json(res, 200, auth.resetPassword(input));
+        if (!accountEmailProvider) return json(res, 503, { error: "Password recovery email is not configured. Use Google sign-in if linked, or contact the platform administrator" });
+        if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(input.email || "")) || String(input.email).length > 254)
+          return json(res, 400, { error: "Enter a valid email address" });
+        const reset = auth.requestPasswordReset(input.email);
+        if (reset) {
+          try { await accountEmailProvider.sendPasswordReset(reset); }
+          catch {
+            auth.cancelPasswordReset(reset.token);
+            console.error("Account recovery email delivery failed");
+          }
+        }
+        return json(res, 200, { message: "If an account matches that email, a reset link will be sent. Check your inbox and spam folder" });
+      }
       if (path === "/api/auth/google" && req.method === "GET") {
         if (!merchantAuth || !googleAuth)
           return json(res, 503, { error: "Google sign-in is not configured" });
+        const reauthSession = url.searchParams.get("reauth") === "1" ? auth.authenticate(sessionToken) : null;
+        if (url.searchParams.get("reauth") === "1" && !reauthSession)
+          return json(res, 401, { error: "Sign in to continue" });
         const state = randomBytes(32).toString("base64url"),
           nonce = randomBytes(32).toString("base64url"),
           returnTo = safeReturnPath(url.searchParams.get("returnTo")),
@@ -1245,6 +1276,7 @@ export function createApp({
               nonce,
               codeVerifier: started.codeVerifier,
               returnTo,
+              expectedUserId: reauthSession?.user.id || null,
               expiresAt: Date.now() + 10 * 60_000,
             }),
           ),
@@ -1279,9 +1311,11 @@ export function createApp({
               code,
               codeVerifier: pending.codeVerifier,
               nonce: pending.nonce,
-            }),
-            user = auth.loginWithGoogle(profile),
-            session = auth.createSession(user.id);
+            });
+          if (pending.expectedUserId && auth.getUser(pending.expectedUserId).google_subject !== profile.subject)
+            throw Error("Sign in using the Google account linked to this merchant");
+          const user = auth.loginWithGoogle(profile),
+            session = auth.createSession(user.id, "google");
           res.setHeader("set-cookie", [
             merchantSessionCookie(session.token, session.expiresAt),
             clearGoogleCookie,
@@ -1350,6 +1384,35 @@ export function createApp({
         if (merchantAuth) auth.logout(sessionToken);
         res.setHeader("set-cookie", expiredMerchantCookie());
         return json(res, 200, { loggedOut: true });
+      }
+
+      if (path === "/api/account" || path.startsWith("/api/account/")) {
+        const session = merchantAuth ? auth.authenticate(sessionToken) : null;
+        if (!session) return json(res, 401, { error: "Sign in to continue" });
+        if (!["GET", "HEAD"].includes(req.method) && req.headers["x-csrf-token"] !== session.csrfToken)
+          return json(res, 403, { error: "Invalid security token" });
+        if (path === "/api/account" && req.method === "GET")
+          return json(res, 200, { ...auth.security(session), recoveryEnabled: Boolean(accountEmailProvider) });
+        if (path === "/api/account/profile" && req.method === "PATCH")
+          return json(res, 200, { user: auth.updateProfile(session.user.id, await body(req)) });
+        if (path === "/api/account/password" && req.method === "POST") {
+          const rate = securityLimiter.take(session.user.id);
+          if (!rate.allowed) return json(res, 429, { error: "Too many password attempts. Try again later" });
+          const replacement = auth.changePassword(session, await body(req));
+          res.setHeader("set-cookie", merchantSessionCookie(replacement.token, replacement.expiresAt));
+          return json(res, 200, { changed: true, csrfToken: replacement.csrfToken });
+        }
+        if (path === "/api/account/sessions/others" && req.method === "DELETE") {
+          auth.revokeOtherSessions(session);
+          return json(res, 200, { revoked: true });
+        }
+        const sessionMatch = path.match(/^\/api\/account\/sessions\/([a-f0-9-]+)$/);
+        if (sessionMatch && req.method === "DELETE") {
+          auth.revokeSession(session.user.id, sessionMatch[1]);
+          if (sessionMatch[1] === session.sessionId) res.setHeader("set-cookie", expiredMerchantCookie());
+          return json(res, 200, { revoked: true });
+        }
+        return json(res, 404, { error: "Not found" });
       }
 
       let merchantSession = null;
@@ -3851,6 +3914,7 @@ export function createApp({
         const files = {
           "/": "index.html",
           "/app.js": "app.js",
+          "/account.js": "account.js",
           "/otp-checkout.js": "otp-checkout.js",
           "/styles.css": "styles.css",
           "/reviews-ui.css": "reviews-ui.css",
@@ -3878,7 +3942,7 @@ export function createApp({
         }
         const merchantRoute =
           /^\/(?:online-store(?:\/(?:themes(?:\/current\/edit)?|pages(?:\/(?:new|[a-f0-9-]+\/edit))?|preferences))?|overview|store|products(?:\/(?:new|\d+|[a-z-]+))?|product-pages(?:\/\d+\/edit)?|reviews(?:\/[a-z-]+)?|orders(?:\/\d+)?|customers|abandoned|live-visitors|policy(?:\/[a-z-]+)?|settings(?:\/[a-z-]+)?)\/?$/;
-        if (merchantRoute.test(path)) {
+        if (merchantRoute.test(path) || ["/account", "/reset-password"].includes(path)) {
           res.writeHead(200, {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",

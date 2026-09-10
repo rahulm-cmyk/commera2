@@ -1,5 +1,27 @@
 # Commera2
 
+## Account security and recovery
+
+The sidebar shows the signed-in name and email. Account & Security (`/account`)
+lets merchants edit their name, change their password, and revoke sessions.
+Google-only accounts can set a password within five minutes of Google sign-in;
+older sessions must confirm the same linked Google account first. Password changes
+rotate the current session and revoke other sessions. Existing passwords require
+the current password or a Google sign-in in the last five minutes. Google-linked
+merchants can use that confirmation to reset a forgotten password without email.
+All account writes require the session CSRF token.
+
+Forgot password uses the Resend HTTPS email API. Set `RESEND_API_KEY`,
+`AUTH_EMAIL_FROM` (an address on your verified sending domain), and `APP_BASE_URL`
+in the hosting environment. Redeploy to apply them. Until configured, the recovery
+screen explains that email is unavailable; Google sign-in continues to work.
+The Google OAuth client secret does not grant permission to send email.
+
+Reset links expire in 30 minutes, use hashed single-use tokens, and invalidate
+all existing sessions and reset links when used. The token is carried in the URL
+fragment and removed from the address bar when the reset form opens.
+See [Resend sending setup](https://resend.com/docs/api-reference/emails/send-email).
+
 A local-first multi-store COD commerce platform built from the supplied 2,237-line blueprint.
 
 ## Current implementation: Part 1

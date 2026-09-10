@@ -5607,6 +5607,40 @@ body.auth-screen #content {
   color: #a42d25;
 }
 
+a.brand { color: inherit; text-decoration: none; }
+a.brand:focus-visible, .account-link:focus-visible { outline: 2px solid #207b65; outline-offset: 4px; }
+.account-link { display: grid; gap: 4px; padding: 12px 6px; color: inherit; text-decoration: none; border-top: 1px solid #dce3df; min-width: 0; }
+.account-link strong, .account-link span { overflow-wrap: anywhere; }
+.account-link span { font-size: 12px; color: #c2d6cd; }
+.account-link small { color: #bce7d4; }
+.mobile-appbar a { color: inherit; text-decoration: none; }
+#mobile-account-link { margin-left: auto; font-size: 13px; }
+.account-workspace { width: min(100%, 1000px); }
+.account-section { display: grid; grid-template-columns: minmax(180px, 1fr) minmax(0, 2fr); gap: 32px; padding: 26px 0; border-bottom: 1px solid #dce3df; }
+.account-section h2 { margin: 0 0 8px; font-size: 18px; }
+.account-section h3 { margin: 0; font-size: 16px; }
+.account-form { display: grid; gap: 14px; min-width: 0; }
+.account-form .field { display: block; margin: 0; }
+.account-form .helper-text { margin: 0; }
+.account-form .field input { display: block; width: 100%; margin-top: 6px; }
+.account-form button[type="submit"] { justify-self: start; min-height: 42px; }
+.account-form [role="status"], #sessions-message { margin: 0; min-height: 20px; overflow-wrap: anywhere; color: #235c49; }
+.account-form [data-state="error"] { color: #a42d25; }
+.account-facts { margin: 0 0 24px; }
+.account-facts > div { display: flex; justify-content: space-between; gap: 18px; padding: 10px 0; border-bottom: 1px solid #e1e6e3; }
+.account-facts dd { margin: 0; text-align: right; overflow-wrap: anywhere; }
+.account-sessions { list-style: none; margin: 0 0 18px; padding: 0; }
+.account-sessions li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 0; border-bottom: 1px solid #e1e6e3; }
+.account-sessions li > div { display: grid; gap: 4px; min-width: 0; overflow-wrap: anywhere; }
+.account-sessions small { color: #647169; }
+.account-sessions button { flex-shrink: 0; }
+.text-button { background: transparent; border: 0; color: #245e4e; padding: 10px 0; text-decoration: underline; text-underline-offset: 3px; }
+.auth-card > .account-form { margin-top: 20px; }
+@media (max-width: 640px) {
+  .account-section { grid-template-columns: minmax(0, 1fr); gap: 16px; padding: 22px 0; }
+  .account-form button[type="submit"] { width: 100%; }
+}
+
 .order-detail-shell {
   display: grid;
   gap: 18px;

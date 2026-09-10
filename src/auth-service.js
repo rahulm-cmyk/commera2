@@ -16,6 +16,7 @@ const publicUser = (value) => ({
   displayName: value.display_name,
   picture: value.picture_url || "",
   googleConnected: Boolean(value.google_subject),
+  hasPassword: Boolean(value.password_hash),
 });
 
 function passwordHash(password) {
@@ -34,6 +35,13 @@ function passwordMatches(password, stored) {
   );
 }
 const fallbackPasswordHash = passwordHash(randomBytes(24).toString("hex"));
+
+function validatePassword(password, confirmation) {
+  if (typeof password !== "string" || password.length < 10 || password.length > 256 ||
+      !/[A-Za-z]/.test(password) || !/[0-9]/.test(password))
+    throw Error("Password must be 10-256 characters and include a letter and number");
+  if (password !== confirmation) throw Error("Passwords do not match");
+}
 
 function validatedAccount(input) {
   const email = normalizeEmail(input.email),
@@ -60,6 +68,8 @@ export class AuthService {
   }
 
   register(input) {
+    if (input.confirmPassword !== undefined && input.password !== input.confirmPassword)
+      throw Error("Passwords do not match");
     const account = validatedAccount(input),
       id = randomUUID(),
       firstUser =
@@ -133,10 +143,10 @@ export class AuthService {
         throw Error("This email is already linked to another Google account");
       this.db
         .prepare(
-          `UPDATE merchant_users SET google_subject=?,display_name=?,picture_url=?,updated_at=CURRENT_TIMESTAMP
+          `UPDATE merchant_users SET google_subject=?,picture_url=?,updated_at=CURRENT_TIMESTAMP
            WHERE id=?`,
         )
-        .run(subject, displayName, picture, existing.id);
+        .run(subject, picture, existing.id);
       return publicUser(this.getUser(existing.id));
     }
 
@@ -177,7 +187,7 @@ export class AuthService {
     return user;
   }
 
-  createSession(userId) {
+  createSession(userId, method = "password") {
     this.getUser(userId);
     const token = randomBytes(32).toString("base64url"),
       csrfToken = randomBytes(24).toString("base64url"),
@@ -186,9 +196,9 @@ export class AuthService {
       ).toISOString();
     this.db
       .prepare(
-        "INSERT INTO merchant_sessions (id,user_id,token_hash,csrf_token,expires_at) VALUES (?,?,?,?,?)",
+        "INSERT INTO merchant_sessions (id,user_id,token_hash,csrf_token,expires_at,auth_method,created_at) VALUES (?,?,?,?,?,?,?)",
       )
-      .run(randomUUID(), userId, tokenHash(token), csrfToken, expiresAt);
+      .run(randomUUID(), userId, tokenHash(token), csrfToken, expiresAt, method, new Date().toISOString());
     return { token, csrfToken, expiresAt };
   }
 
@@ -196,7 +206,7 @@ export class AuthService {
     if (!token) return null;
     const session = this.db
       .prepare(
-        `SELECT ms.*,mu.email,mu.display_name,mu.active
+        `SELECT ms.*,mu.email,mu.display_name,mu.active,mu.google_subject,mu.picture_url,mu.password_hash
          FROM merchant_sessions ms JOIN merchant_users mu ON mu.id=ms.user_id
          WHERE ms.token_hash=?`,
       )
@@ -210,11 +220,9 @@ export class AuthService {
     }
     return {
       sessionId: session.id,
-      user: {
-        id: session.user_id,
-        email: session.email,
-        displayName: session.display_name,
-      },
+      user: publicUser({ ...session, id: session.user_id }),
+      authMethod: session.auth_method,
+      createdAt: session.created_at,
       csrfToken: session.csrf_token,
       expiresAt: session.expires_at,
     };
@@ -226,6 +234,102 @@ export class AuthService {
         .prepare("DELETE FROM merchant_sessions WHERE token_hash=?")
         .run(tokenHash(token));
     return { loggedOut: true };
+  }
+
+  security(session) {
+    return {
+      user: publicUser(this.getUser(session.user.id)),
+      authMethod: session.authMethod,
+      canSetPassword: this.recentGoogleSession(session),
+      sessions: this.db.prepare(
+        "SELECT id,auth_method,created_at,expires_at FROM merchant_sessions WHERE user_id=? AND expires_at>? ORDER BY created_at DESC",
+      ).all(session.user.id, new Date().toISOString()).map((row) => ({
+        id: row.id, current: row.id === session.sessionId,
+        method: row.auth_method, createdAt: row.created_at, expiresAt: row.expires_at,
+      })),
+    };
+  }
+
+  recentGoogleSession(session) {
+    const raw = String(session.createdAt || "").replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00"),
+      created = Date.parse(/(?:Z|[+-]\d{2}:\d{2})$/.test(raw) ? raw : raw + "Z"),
+      age = Date.now() - created;
+    return session.authMethod === "google" && age >= 0 && age < 5 * 60_000;
+  }
+
+  updateProfile(userId, input) {
+    const name = clean(input.displayName).replace(/\s+/g, " ");
+    if (name.length < 2 || name.length > 100) throw Error("Name must be between 2 and 100 characters");
+    this.db.prepare("UPDATE merchant_users SET display_name=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .run(name, userId);
+    return publicUser(this.getUser(userId));
+  }
+
+  changePassword(session, input) {
+    validatePassword(input.password, input.confirmPassword);
+    const user = this.getUser(session.user.id);
+    if (user.password_hash && !this.recentGoogleSession(session)) {
+      if (!passwordMatches(String(input.currentPassword || ""), user.password_hash))
+        throw Error("Current password is incorrect");
+    } else if (!user.password_hash && !this.recentGoogleSession(session)) {
+      throw Error("Sign in with Google again before setting a password");
+    }
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      const changed = this.db.prepare("UPDATE merchant_users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND password_hash=?")
+        .run(passwordHash(input.password), user.id, user.password_hash);
+      if (!changed.changes) throw Error("Account changed. Sign in again and retry");
+      this.db.prepare("DELETE FROM merchant_sessions WHERE user_id=?").run(user.id);
+      this.db.prepare("DELETE FROM merchant_password_resets WHERE user_id=?").run(user.id);
+      const replacement = this.createSession(user.id, "password");
+      this.db.exec("COMMIT");
+      return replacement;
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
+  }
+
+  revokeSession(userId, sessionId) {
+    this.db.prepare("DELETE FROM merchant_sessions WHERE user_id=? AND id=?").run(userId, sessionId);
+  }
+
+  revokeOtherSessions(session) {
+    this.db.prepare("DELETE FROM merchant_sessions WHERE user_id=? AND id<>?").run(session.user.id, session.sessionId);
+  }
+
+  requestPasswordReset(email) {
+    const user = this.db.prepare("SELECT * FROM merchant_users WHERE email=? AND active=1").get(normalizeEmail(email));
+    if (!user) return null;
+    const token = randomBytes(32).toString("base64url");
+    this.db.prepare("DELETE FROM merchant_password_resets WHERE expires_at<=?").run(new Date().toISOString());
+    this.db.prepare("INSERT INTO merchant_password_resets (token_hash,user_id,password_version,expires_at) VALUES (?,?,?,?)")
+      .run(tokenHash(token), user.id, tokenHash(user.password_hash), new Date(Date.now() + 30 * 60_000).toISOString());
+    return { token, email: user.email };
+  }
+
+  cancelPasswordReset(token) {
+    this.db.prepare("DELETE FROM merchant_password_resets WHERE token_hash=?").run(tokenHash(token));
+  }
+
+  resetPassword(input) {
+    validatePassword(input.password, input.confirmPassword);
+    const reset = this.db.prepare("SELECT * FROM merchant_password_resets WHERE token_hash=? AND expires_at>?")
+      .get(tokenHash(input.token), new Date().toISOString());
+    if (!reset) throw Error("This reset link is invalid or expired. Request a new link");
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      // Lock the account before checking the token so concurrent resets cannot both succeed.
+      this.db.prepare("UPDATE merchant_users SET active=active WHERE id=?").run(reset.user_id);
+      const user = this.getUser(reset.user_id),
+        valid = this.db.prepare("SELECT token_hash FROM merchant_password_resets WHERE token_hash=? AND expires_at>?")
+          .get(tokenHash(input.token), new Date().toISOString());
+      if (!valid || tokenHash(user.password_hash) !== reset.password_version)
+        throw Error("This reset link is invalid or expired. Request a new link");
+      this.db.prepare("UPDATE merchant_users SET password_hash=?,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+        .run(passwordHash(input.password), user.id);
+      this.db.prepare("DELETE FROM merchant_password_resets WHERE user_id=?").run(user.id);
+      this.db.prepare("DELETE FROM merchant_sessions WHERE user_id=?").run(user.id);
+      this.db.exec("COMMIT");
+      return { reset: true };
+    } catch (error) { this.db.exec("ROLLBACK"); throw error; }
   }
 
   addStore(userId, storeId, role = "owner") {

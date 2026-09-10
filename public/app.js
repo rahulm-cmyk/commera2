@@ -1,3 +1,4 @@
+import { renderAccount, renderRecovery } from "./account.js";
 const $ = (selector) => document.querySelector(selector);
 const content = $("#content"),
   select = $("#store-select"),
@@ -321,6 +322,7 @@ let stores = [],
   currentMerchantLocation = location.pathname + location.search;
 const selectedStoreKey = "commera2-selected-store";
 const viewPaths = {
+  account: "/account",
   home: "/overview",
   store: "/store",
   'online-store': '/online-store/themes',
@@ -368,6 +370,7 @@ const validProductTabs = new Set([
   validPolicyTabs = new Set(["rules", "written", "contact"]);
 function routeFromPath(pathname = location.pathname) {
   const path = pathname.replace(/\/+$/, "") || "/";
+  if (path === "/account") return { valid: true, view: "account", path };
   if (path === "/" || path === "/overview")
     return { valid: true, view: "home", path: "/overview" };
   if (path === "/store") return { valid: true, view: "store", path };
@@ -493,7 +496,10 @@ async function navigateTo(path, { replace = false } = {}) {
   const method = replace ? "replaceState" : "pushState";
   history[method]({}, "", path);
   currentMerchantLocation = location.pathname + location.search;
-  if (data) render();
+  if (merchantIdentity) {
+    if (data || routeFromPath().view === "account") render();
+    else await load();
+  }
 }
 const esc = (value) =>
   String(value ?? "").replace(
@@ -590,10 +596,25 @@ async function refreshStores() {
   if (mobileName) mobileName.textContent = active?.name || "Store";
 }
 function renderAuthentication() {
+  closeSidebar();
+  closeFloatingMenu();
+  if (liveVisitorStream) { liveVisitorStream.close(); liveVisitorStream = null; }
   document.body.classList.add("auth-screen");
   const authError = new URLSearchParams(location.search).get("authError") || "";
   content.innerHTML = `<section class="auth-card"><div class="auth-brand"><i>C2</i><div><strong>Commera2</strong><span>Merchant workspace</span></div></div>${googleAuthEnabled ? '<a class="google-auth-button" href="/api/auth/google?returnTo=%2Foverview"><span aria-hidden="true">G</span>Continue with Google</a><div class="auth-divider"><span>or use email</span></div>' : ""}<div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="auth-form"><label class="field auth-name" hidden>Your name<input name="displayName" autocomplete="name"></label><label class="field">Email<input name="email" type="email" autocomplete="email" required></label><label class="field">Password<input name="password" type="password" autocomplete="current-password" minlength="10" required></label><p class="helper-text auth-password-help" hidden>Use at least 10 characters with a letter and number.</p><button class="primary" type="submit">Sign in</button><p id="auth-message" role="status"${authError ? ' data-state="error"' : ""}>${esc(authError)}</p></form></section>`;
   let mode = "login";
+  const confirmField = document.createElement("label");
+  confirmField.className = "field auth-confirm";
+  confirmField.hidden = true;
+  confirmField.innerHTML = 'Confirm password <input name="confirmPassword" type="password" autocomplete="new-password" maxlength="256">';
+  $("#auth-form").insertBefore(confirmField, $("#auth-form button[type='submit']"));
+  const forgot = document.createElement("button");
+  forgot.type = "button";
+  forgot.className = "text-button";
+  forgot.id = "forgot-password";
+  forgot.textContent = "Forgot password?";
+  $("#auth-form").append(forgot);
+  forgot.onclick = () => renderRecovery({ root: content, api, esc, back: renderAuthentication, googleEnabled: googleAuthEnabled });
   const form = $("#auth-form"),
     name = $(".auth-name"),
     help = $(".auth-password-help"),
@@ -608,6 +629,12 @@ function renderAuthentication() {
       name.hidden = mode !== "register";
       name.querySelector("input").required = mode === "register";
       help.hidden = mode !== "register";
+      confirmField.hidden = mode !== "register";
+      form.elements.confirmPassword.required = mode === "register";
+      forgot.hidden = mode !== "login";
+      name.querySelector("input").minLength = 2;
+      name.querySelector("input").maxLength = 100;
+      form.elements.password.maxLength = 256;
       form.elements.password.autocomplete =
         mode === "register" ? "new-password" : "current-password";
       submit.textContent = mode === "register" ? "Create account" : "Sign in";
@@ -616,6 +643,12 @@ function renderAuthentication() {
   });
   form.onsubmit = async (event) => {
     event.preventDefault();
+    if (mode === "register" && form.elements.password.value !== form.elements.confirmPassword.value) {
+      message.textContent = "Passwords do not match";
+      message.dataset.state = "error";
+      form.elements.confirmPassword.focus();
+      return;
+    }
     submit.disabled = true;
     message.textContent = mode === "register" ? "Creating account…" : "Signing in…";
     try {
@@ -625,6 +658,7 @@ function renderAuthentication() {
           body: JSON.stringify(values),
         });
       merchantIdentity = result.user;
+      updateAccountIdentity(result.user);
       csrfToken = result.csrfToken;
       document.body.classList.remove("auth-screen");
       history.replaceState({}, "", "/overview");
@@ -645,9 +679,17 @@ async function bootstrap() {
   } catch {
     googleAuthEnabled = false;
   }
+  if (location.pathname === "/reset-password") {
+    const token = new URLSearchParams(location.hash.slice(1)).get("token") || "";
+    history.replaceState({}, "", "/reset-password");
+    document.body.classList.add("auth-screen");
+    return renderRecovery({ root: content, api, esc, token, googleEnabled: googleAuthEnabled,
+      back: () => { history.replaceState({}, "", "/"); renderAuthentication(); } });
+  }
   try {
     const result = await api("/api/auth/me");
     merchantIdentity = result.user;
+    updateAccountIdentity(result.user);
     csrfToken = result.csrfToken || "";
     document.body.classList.remove("auth-screen");
     await load();
@@ -661,6 +703,7 @@ async function load() {
   content.innerHTML = `<section class="panel app-loading" aria-label="Loading store"><div class="skeleton skeleton-title"></div><div class="skeleton skeleton-line"></div><div class="skeleton-grid">${Array.from({ length: 4 }, () => '<div class="skeleton skeleton-card"></div>').join("")}</div></section>`;
   try {
     await refreshStores();
+    if (routeFromPath().view === "account") { render(); return; }
     if (!storeId) {
       content.innerHTML =
         '<div class="panel empty"><h2>Create your first store</h2><p>Begin the working commerce flow with isolated store data.</p><button class="primary" id="empty-store">Create store</button></div>';
@@ -732,6 +775,7 @@ function render() {
   if (route.reviewTab) reviewTab = route.reviewTab;
   if (route.policyTab) policyTab = route.policyTab;
   const names = {
+    account: "Account & Security",
     home: "Overview",
     store: "Store",
     'online-store': 'Online Store',
@@ -753,6 +797,10 @@ function render() {
   document.querySelector('.online-store-subnav').hidden = !['store','online-store'].includes(view);
   document.querySelectorAll('[data-route]').forEach(button => button.classList.toggle('active', button.dataset.route === `/online-store/${route.onlineTab || 'themes'}`));
   if (view === 'online-store') return onlineStoreView(route);
+  if (view === "account") return renderAccount({ root: content, api, esc,
+    updateIdentity: updateAccountIdentity, updateCsrf: (value) => { csrfToken = value; },
+    isActive: () => routeFromPath().view === "account" && Boolean(merchantIdentity),
+    signOut: () => $("#logout").click() });
   if (route.screen === "product-new") return createProductEditor();
   if (route.screen === "product-edit")
     return createProductEditor(route.productId);
@@ -7721,17 +7769,33 @@ document.addEventListener("keydown", (event) => {
   }
 });
 $("#new-store").onclick = newStore;
+function updateAccountIdentity(user) {
+  merchantIdentity = user;
+  $("#account-name").textContent = user.displayName;
+  $("#account-email").textContent = user.email;
+  $("#mobile-account-link").title = `${user.displayName} (${user.email})`;
+}
+for (const id of ["brand-home", "mobile-brand-home", "account-link", "mobile-account-link"]) {
+  $(`#${id}`).onclick = (event) => {
+    if (event.ctrlKey || event.metaKey || event.shiftKey || event.altKey || event.button) return;
+    event.preventDefault();
+    closeSidebar();
+    navigateTo(event.currentTarget.getAttribute("href")).catch((error) => toast(error.message));
+  };
+}
 $("#logout").onclick = async () => {
+  if (!await confirmEditorNavigation()) return;
   try {
     await api("/api/auth/logout", { method: "POST", body: "{}" });
   } catch (error) {
-    if (error.status !== 401) toast(error.message);
+    if (error.status !== 401) { toast(error.message); return; }
   }
   merchantIdentity = null;
   csrfToken = "";
   data = null;
   storeId = null;
   localStorage.removeItem(selectedStoreKey);
+  history.replaceState({}, "", "/");
   renderAuthentication();
 };
 select.onchange = async () => {
@@ -7782,7 +7846,10 @@ window.addEventListener("popstate", async () => {
   productPageDirty = false;
   productPageSaveHandler = null;
   currentMerchantLocation = location.pathname + location.search;
-  if (data) render();
+  if (merchantIdentity) {
+    if (data || routeFromPath().view === "account") render();
+    else await load();
+  }
 });
 window.addEventListener("beforeunload", (event) => {
   if (!productPageDirty) return;

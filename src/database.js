@@ -5,6 +5,7 @@ import { existsSync } from "node:fs";
 import { PostgresSyncDatabase } from "./postgres-sync-database.js";
 import { migrateSubscriptionPolicy } from './policy-migrations.js';
 import { backfillLegacyOrderSubtotals } from './order-migrations.js';
+import { migrateAccountSecurity } from './account-migrations.js';
 
 const postgresTableSql = (sql) =>
   sql
@@ -434,6 +435,7 @@ export function createDatabase(filename = "data/commera2.sqlite") {
         ALTER TABLE store_policies ADD CONSTRAINT store_policies_policy_type_check CHECK (policy_type IN ('return-refund','privacy','terms','shipping','contact','legal','subscription'));
       END $$;`);
       backfillLegacyOrderSubtotals(db);
+      migrateAccountSecurity(db, true);
       return db;
     }
   }
@@ -1613,5 +1615,6 @@ export function createDatabase(filename = "data/commera2.sqlite") {
   migrateSubscriptionPolicy(db);
   backfillLegacyOrderSubtotals(db);
   if (filename === ":memory:") db.__commera2TestDatabase = true;
+  migrateAccountSecurity(db);
   return db;
 }
