@@ -5,6 +5,7 @@ import {
   timingSafeEqual,
 } from "node:crypto";
 import { publishPageSnapshot } from './page-publication.js';
+import { parseDatabaseTimestamp } from './database-time.js';
 
 const row = (value) =>
   value
@@ -17,13 +18,7 @@ const row = (value) =>
     : null;
 const clean = (value) => String(value ?? "").trim();
 const checkoutExpired = (value) => {
-  if (!value) return true;
-  const text = value instanceof Date ? value.toISOString() : String(value),
-    time = Date.parse(
-      /(?:Z|[+-]\d\d:?\d\d)$/.test(text)
-        ? text
-        : `${text.replace(" ", "T")}Z`,
-    );
+  const time = parseDatabaseTimestamp(value);
   return !Number.isFinite(time) || Date.now() - time > 2 * 60 * 60 * 1000;
 };
 const normalizeSpaces = (value) => clean(value).replace(/\s+/g, " ");

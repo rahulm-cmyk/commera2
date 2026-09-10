@@ -5,15 +5,12 @@ import {
   randomUUID,
   timingSafeEqual,
 } from "node:crypto";
+import { parseDatabaseTimestamp as parseTime } from './database-time.js';
 
 const clean = (value) => String(value ?? "").trim();
 const timestamp = (value = Date.now()) => new Date(value).toISOString();
 const dbTimestamp = (value) =>
   new Date(value).toISOString().replace("T", " ").replace("Z", "");
-const parseTime = (value) => {
-  const text = clean(value);
-  return new Date(/(?:Z|[+-]\d\d:?\d\d)$/.test(text) ? text : `${text.replace(" ", "T")}Z`).getTime();
-};
 const maskPhone = (phone) => `+91 ••••••${String(phone).slice(-4)}`;
 const parseBoolean = (value) => {
   if (typeof value === "string") {
