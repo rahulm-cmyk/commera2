@@ -1,9 +1,10 @@
 export function migrateAccountSecurity(db, postgres = false) {
   if (postgres) {
-    db.exec("ALTER TABLE merchant_sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'password'");
+    db.exec("ALTER TABLE merchant_sessions ADD COLUMN IF NOT EXISTS auth_method TEXT NOT NULL DEFAULT 'unknown'");
   } else if (!db.prepare("PRAGMA table_info(merchant_sessions)").all().some((c) => c.name === "auth_method")) {
-    db.exec("ALTER TABLE merchant_sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'password'");
+    db.exec("ALTER TABLE merchant_sessions ADD COLUMN auth_method TEXT NOT NULL DEFAULT 'unknown'");
   }
+  db.exec("UPDATE merchant_sessions SET auth_method='unknown' WHERE auth_method='password' AND created_at NOT LIKE '%T%'");
   db.exec(`CREATE TABLE IF NOT EXISTS merchant_password_resets (
     token_hash TEXT PRIMARY KEY,
     user_id TEXT NOT NULL REFERENCES merchant_users(id) ON DELETE CASCADE,
