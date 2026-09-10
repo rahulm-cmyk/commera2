@@ -10,7 +10,7 @@ export const workspaceDestinations = [
   { label: 'Store pages', description: 'About, FAQs and other information', path: '/online-store/pages', icon: 'file-text' },
   { label: 'Domains', description: 'Connect your website address', path: '/settings/domain', icon: 'globe' },
   { label: 'Settings', description: 'Checkout, delivery and store preferences', path: '/settings', icon: 'settings-2' },
-  { label: 'Policies', description: 'Returns, shipping and privacy policies', path: '/policy', icon: 'shield-check' },
+  { label: 'Store policies', description: 'Returns, shipping and privacy policies', path: '/policy', icon: 'shield-check' },
   { label: 'Account & security', description: 'Your profile, password and sign-in', path: '/account', icon: 'shield-check' },
 ];
 
@@ -40,6 +40,7 @@ export function setupStoreSwitcher({ document, select }) {
       const button = document.createElement('button');
       button.type = 'button';
       button.dataset.storeValue = option.value;
+      button.insertAdjacentHTML('afterbegin', workspaceIcon('store'));
       const label = document.createElement('span');
       label.textContent = option.textContent;
       button.append(label);

@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { createApp } from '../src/server.js';
 import { createDatabase } from '../src/database.js';
+import { StorefrontService } from '../src/storefront-service.js';
 
 const { chromium } = await import(process.env.PLAYWRIGHT_MODULE || 'playwright');
 const browser = await chromium.launch({ channel: 'chrome', headless: true });
@@ -56,6 +57,22 @@ try {
     }
     const search = page.getByRole('searchbox', { name: /Search orders/i });
     assert.equal(await search.evaluate(el => getComputedStyle(el).borderTopWidth), '0px', 'Search has two borders');
+    const filterBounds = await page.locator('.order-filter-field:visible select').evaluateAll(elements => elements.map(el => {
+      const rect = el.getBoundingClientRect();
+      return { top: rect.top, height: rect.height, right: rect.right };
+    }));
+    assert.equal(filterBounds.length, width >= 768 ? 5 : 2);
+    assert.ok(filterBounds.every(rect => rect.top === filterBounds[0].top && rect.height === 40 && rect.right <= width), `Filter alignment at ${width}`);
+    assert.equal(await page.locator('#hide-archived').evaluate(el => el.offsetWidth), 16);
+    if (width === 1440) {
+      await page.locator('.columns-menu summary').click();
+      await page.locator('[data-toggle-order-column]').first().waitFor({ state: 'visible' });
+      await page.keyboard.press('Escape');
+      await search.fill('no-matching-order-fixture');
+      await page.getByText('No orders match these filters.', { exact: true }).waitFor();
+      await page.locator('#order-search').fill('');
+      await page.locator('.order-open-detail:visible').first().waitFor();
+    }
     await page.screenshot({ path: `qa-ui-regression-orders-${width}.png`, fullPage: true });
     await page.locator('.order-open-detail:visible').first().click();
     await page.locator('.order-detail-grid aside').waitFor();
@@ -107,11 +124,40 @@ try {
   }
 
   // Multi-store selection, keyboard handling and unsaved-edit protection use an isolated DB.
-  const app = createApp({ db: createDatabase(':memory:'), port: 0, merchantAuth: false, domainSyncIntervalMs: 0, googleAuthProvider: null, accountEmailProvider: null });
+  const db = createDatabase(':memory:');
+  const app = createApp({ db, port: 0, merchantAuth: false, domainSyncIntervalMs: 0, googleAuthProvider: null, accountEmailProvider: null });
   const first = app.service.createStore({ name: 'A long store name that must remain readable', slug: 'first-ui-fixture' });
   const second = app.service.createStore({ name: 'Second store <literal text>', slug: 'second-ui-fixture' });
+  const product = app.service.createProduct(first.id, { name: 'Published fixture', slug: 'published-fixture', pricePaise: 10000, stock: 2 });
+  const productPage = app.service.createProductPage(first.id, { productId: product.id, title: 'Published fixture', slug: 'published-fixture', body: 'Fixture' });
+  app.service.publishPage(first.id, productPage.id);
+  const storefront = new StorefrontService(db);
+  const png = { name: 'fixture.png', type: 'image/png', data: 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII=' };
+  storefront.saveBranding(first.id, { logo: png });
+  storefront.saveProduct(first.id, product.id, { mainImage: png, description: '<p>Fixture</p>', buttonText: 'Buy now', buttonAction: 'checkout', publish: true }, productPage.id);
+  storefront.saveHome(first.id, { bannerImage: png, bannerHeading: 'Fixture', buttonText: 'Shop', buttonTarget: { type: 'product', id: product.id }, featuredProductIds: [product.id] });
+  storefront.publishHome(first.id);
   await app.start('127.0.0.1');
   try {
+    for (const width of widths) {
+      const headerPage = await browser.newPage({ viewport: { width, height: 960 }, reducedMotion: 'reduce' });
+      await headerPage.goto(`http://127.0.0.1:${app.port}/overview`);
+      const link = headerPage.locator('#workspace-store-link');
+      await link.waitFor({ state: 'visible' });
+      assert.ok((await link.getAttribute('href')).endsWith('/s/first-ui-fixture'));
+      const geometry = await link.evaluate(el => {
+        const range = document.createRange();
+        range.selectNode(el.firstChild);
+        return { lines: range.getClientRects().length, height: el.offsetHeight, decoration: getComputedStyle(el).textDecorationLine, right: el.getBoundingClientRect().right };
+      });
+      assert.equal(geometry.lines, 1, `View store wraps at ${width}`);
+      assert.ok(geometry.height <= 44 && geometry.right <= width);
+      await link.hover();
+      assert.equal(await link.evaluate(el => getComputedStyle(el).textDecorationLine), 'none');
+      await checkPage(headerPage);
+      await headerPage.screenshot({ path: `qa-ui-regression-published-header-${width}.png` });
+      await headerPage.close();
+    }
     const page = await browser.newPage({ viewport: { width: 1440, height: 960 }, reducedMotion: 'reduce' });
     page.on('pageerror', error => errors.push(error.message));
     await page.goto(`http://127.0.0.1:${app.port}/overview`);

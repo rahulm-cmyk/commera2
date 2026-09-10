@@ -22,6 +22,15 @@ test('Themes uses an inert storefront thumbnail and preserves editing links and 
 });
 
 const png={name:'test.png',type:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='};
+test('Published product page counts use singular and plural wording', async () => {
+  for (const count of [0, 1, 2]) {
+    const root={innerHTML:'',querySelectorAll:()=>[]};
+    await renderOnlineStore({root,route:{onlineTab:'themes'},storeId:1,
+      data:{store:{name:'Fixture',slug:'fixture'},pages:Array.from({length:count},(_,id)=>({id,status:'published'}))},
+      esc:String,navigate:()=>{}});
+    assert.ok(root.innerHTML.includes(`${count} published product ${count===1?'page':'pages'}</span>`));
+  }
+});
 async function setup(t) {
   const db=createDatabase(':memory:'),app=createApp({db,port:0});await app.start();t.after(()=>app.stop());
   const store=app.service.createStore({name:'Online Test',slug:'online-test'}),product=app.service.createProduct(store.id,{name:'Test Product',slug:'test-product',pricePaise:50000,stock:8});
