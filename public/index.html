@@ -4,21 +4,26 @@
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width,initial-scale=1" />
     <title>Commera2</title>
+    <link rel="icon" type="image/png" href="/brand/commera2-icon-v1.png" />
+    <link rel="apple-touch-icon" href="/brand/commera2-icon-v1.png" />
+    <meta name="theme-color" content="#087f83" />
     <link rel="stylesheet" href="/styles.css?v=workspace-polish-3" />
     <link rel="stylesheet" href="/page-blocks.css" />
     <link rel="stylesheet" href="/online-store.css?v=workspace-polish-1" />
     <link rel="stylesheet" href="/reviews-ui.css?v=reviews-ui-6" />
-    <link rel="stylesheet" href="/merchant-ui.css?v=merchant-1" />
+    <link rel="stylesheet" href="/merchant-ui.css?v=merchant-4" />
   </head>
   <body>
     <aside id="app-sidebar" class="app-sidebar" aria-label="Merchant workspace">
       <a class="brand" id="brand-home" href="/overview" aria-label="Commera2 home">
-        <i>C2</i>
-        <div><strong>Commera2</strong><small>Merchant workspace</small></div>
+        <img class="commera-wordmark" src="/brand/commera2-logo-v1.png" width="2172" height="724" alt="Commera2">
       </a>
-      <label class="store-label"
-        >YOUR STORE<select id="store-select" aria-label="Switch store"></select
-      ></label>
+      <div class="store-switcher">
+        <label class="store-label">Your store<select id="store-select" aria-label="Switch store"></select></label>
+        <div class="store-switcher-current" id="store-switcher-current" hidden><span class="store-switcher-copy"><small>Your store</small><strong></strong></span></div>
+        <button class="store-switcher-trigger" id="store-switcher-trigger" type="button" aria-expanded="false" aria-controls="store-switcher-options" hidden><span class="store-switcher-copy"><small>Switch store</small><strong></strong></span><img class="workspace-icon" src="/icons/chevron-right.svg" alt=""></button>
+        <div class="store-switcher-options" id="store-switcher-options" role="group" aria-label="Your stores" hidden></div>
+      </div>
       <nav aria-label="Main navigation">
         <span class="nav-section-label">Workspace</span>
         <button class="active" data-view="home"><img class="nav-icon" src="/icons/house.svg" alt="">Home</button>
@@ -61,7 +66,7 @@
           aria-expanded="false"
         >
           <img class="workspace-icon" src="/icons/menu.svg" alt=""></button
-        ><a id="mobile-brand-home" href="/overview">Commera2</a><a id="mobile-account-link" href="/account" aria-label="Account and security">Account</a><strong id="mobile-store-name" hidden>Store</strong>
+        ><a id="mobile-brand-home" href="/overview" aria-label="Commera2 home"><img class="commera-wordmark" src="/brand/commera2-logo-v1.png" width="2172" height="724" alt="Commera2"></a><a id="mobile-account-link" href="/account" aria-label="Account and security">Account</a><strong id="mobile-store-name" hidden>Store</strong>
       </div>
       <div class="workspace-topbar">
         <div class="workspace-location"><small>Workspace</small><strong id="workspace-store-name">Your store</strong></div>

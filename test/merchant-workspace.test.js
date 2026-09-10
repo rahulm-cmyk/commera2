@@ -44,11 +44,15 @@ test('merchant scripts, styles and icons are served with correct types and missi
   const app = createApp({db:createDatabase(':memory:'),port:0});
   await app.start('127.0.0.1'); t.after(() => app.stop());
   const base = `http://127.0.0.1:${app.port}`;
-  for (const [path,type] of [['/merchant-workspace.js','text/javascript'],['/merchant-ui.css','text/css'],['/icons/search.svg','image/svg+xml']]) {
+  for (const [path,type] of [['/merchant-workspace.js','text/javascript'],['/merchant-ui.css','text/css'],['/icons/search.svg','image/svg+xml'],['/brand/commera2-logo-v1.png','image/png'],['/brand/commera2-icon-v1.png','image/png']]) {
     const response = await fetch(base+path);
     assert.equal(response.status,200,path);
     assert.ok(response.headers.get('content-type').startsWith(type));
   }
   assert.equal((await fetch(base+'/icons/not-an-icon.svg')).status,404);
   assert.equal((await fetch(base+'/icons/LICENSE')).status,404);
+  assert.equal((await fetch(base+'/brand/private.png')).status,404);
+  const html = await (await fetch(base+'/overview')).text();
+  assert.match(html, /rel="icon"[^>]+commera2-icon-v1\.png/);
+  assert.match(html, /class="commera-wordmark"[^>]+alt="Commera2"/);
 });

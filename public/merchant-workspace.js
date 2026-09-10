@@ -16,6 +16,81 @@ export const workspaceDestinations = [
 
 export const workspaceIcon = name => `<img class="workspace-icon" src="/icons/${name}.svg" width="18" height="18" alt="" aria-hidden="true">`;
 
+export function setupStoreSwitcher({ document, select }) {
+  const root = document.querySelector('.store-switcher');
+  const trigger = document.querySelector('#store-switcher-trigger');
+  const current = document.querySelector('#store-switcher-current');
+  const options = document.querySelector('#store-switcher-options');
+  if (!root || !trigger || !current || !options) return { sync() {}, close() {} };
+  const close = () => {
+    options.hidden = true;
+    trigger.setAttribute('aria-expanded', 'false');
+  };
+  const sync = () => {
+    const selected = select.selectedOptions[0];
+    const name = selected?.textContent || 'No store selected';
+    trigger.querySelector('strong').textContent = name;
+    trigger.setAttribute('aria-label', `Switch store, current store: ${name}`);
+    current.querySelector('strong').textContent = name;
+    trigger.hidden = select.options.length < 2;
+    current.hidden = !trigger.hidden;
+    trigger.disabled = select.disabled;
+    select.closest('.store-label').hidden = true;
+    options.replaceChildren(...[...select.options].map(option => {
+      const button = document.createElement('button');
+      button.type = 'button';
+      button.dataset.storeValue = option.value;
+      const label = document.createElement('span');
+      label.textContent = option.textContent;
+      button.append(label);
+      if (option.selected) {
+        button.setAttribute('aria-current', 'true');
+        button.insertAdjacentHTML('beforeend', workspaceIcon('check'));
+      }
+      return button;
+    }));
+    close();
+  };
+  trigger.addEventListener('click', () => {
+    if (!options.hidden) return close();
+    options.hidden = false;
+    trigger.setAttribute('aria-expanded', 'true');
+    (options.querySelector('[aria-current="true"]') || options.querySelector('button'))?.focus();
+  });
+  options.addEventListener('click', async event => {
+    const button = event.target.closest('[data-store-value]');
+    if (!button || select.disabled) return;
+    close();
+    trigger.focus();
+    trigger.disabled = true;
+    select.value = button.dataset.storeValue;
+    try { await select.onchange?.(); }
+    finally { sync(); }
+  });
+  root.addEventListener('keydown', event => {
+    if (options.hidden) return;
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      event.stopPropagation();
+      close();
+      trigger.focus();
+      return;
+    }
+    const buttons = [...options.querySelectorAll('button')];
+    const index = buttons.indexOf(document.activeElement);
+    const targets = { ArrowDown: Math.min(index + 1, buttons.length - 1), ArrowUp: Math.max(index - 1, 0), Home: 0, End: buttons.length - 1 };
+    if (event.key in targets) {
+      event.preventDefault();
+      buttons[targets[event.key]]?.focus();
+    }
+  });
+  root.addEventListener('focusout', event => {
+    if (!root.contains(event.relatedTarget)) close();
+  });
+  document.addEventListener('click', event => { if (!root.contains(event.target)) close(); });
+  return { sync, close };
+}
+
 export function matchingDestinations(query) {
   const words = String(query || '').toLowerCase().trim().split(/\s+/).filter(Boolean);
   return workspaceDestinations.filter(item => words.every(word => `${item.label} ${item.description}`.toLowerCase().includes(word)));

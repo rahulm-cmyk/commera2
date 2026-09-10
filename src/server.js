@@ -3950,6 +3950,8 @@ export function createApp({
           "/account.js": "account.js",
           "/merchant-workspace.js": "merchant-workspace.js",
           "/merchant-ui.css": "merchant-ui.css",
+          "/brand/commera2-logo-v1.png": "brand/commera2-logo-v1.png",
+          "/brand/commera2-icon-v1.png": "brand/commera2-icon-v1.png",
           "/otp-checkout.js": "otp-checkout.js",
           "/styles.css": "styles.css",
           "/reviews-ui.css": "reviews-ui.css",
@@ -3968,6 +3970,7 @@ export function createApp({
             ".html": "text/html; charset=utf-8",
             ".js": "text/javascript; charset=utf-8",
             ".css": "text/css; charset=utf-8",
+            ".png": "image/png",
           };
           res.writeHead(200, {
             "content-type": types[extname(file)],

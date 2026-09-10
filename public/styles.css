@@ -2059,7 +2059,7 @@ body {
   grid-template-columns: 250px 1fr;
   min-height: 100vh;
 }
-aside {
+.app-sidebar {
   background: var(--green);
   color: #fff;
   padding: 28px 18px;
@@ -3058,7 +3058,7 @@ fieldset legend {
   body {
     grid-template-columns: 1fr;
   }
-  aside {
+  .app-sidebar {
     position: relative;
   }
   main {

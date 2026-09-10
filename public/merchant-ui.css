@@ -94,6 +94,40 @@ body:has(> #app-sidebar) .brand {
   text-decoration: none;
 }
 
+body:has(> #app-sidebar) .commera-wordmark {
+  display: block;
+  width: 100%;
+  height: auto;
+  max-width: 240px;
+  object-fit: contain;
+}
+
+body:has(> #app-sidebar) .brand {
+  display: flex;
+  justify-content: center;
+  min-height: 48px;
+  padding: 0;
+}
+
+body:has(> #app-sidebar) .brand .commera-wordmark {
+  width: 196px;
+  max-width: 100%;
+}
+
+body:has(> #app-sidebar) #mobile-brand-home {
+  display: flex;
+  align-items: center;
+  width: 150px;
+  max-width: calc(100% - 120px);
+}
+
+body:has(> #app-sidebar) .auth-brand:has(.commera-wordmark) {
+  display: flex;
+  justify-content: center;
+  width: 100%;
+  margin-bottom: 20px;
+}
+
 body:has(> #app-sidebar) :is(.brand i, .auth-brand i) {
   flex: 0 0 36px;
   width: 36px;
@@ -140,6 +174,95 @@ body:has(> #app-sidebar) .store-label select {
 body:has(> #app-sidebar) .store-label option {
   background: #fff;
   color: var(--ink);
+}
+
+body:has(> #app-sidebar) .store-switcher {
+  position: relative;
+  min-width: 0;
+}
+
+body:has(> #app-sidebar) :is(.store-switcher-trigger, .store-switcher-current) {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 64px;
+  margin: 0;
+  padding: 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--paper);
+  color: var(--ink);
+  text-align: left;
+}
+
+body:has(> #app-sidebar) .store-switcher-copy {
+  display: grid;
+  flex: 1;
+  gap: 4px;
+  min-width: 0;
+}
+
+body:has(> #app-sidebar) .store-switcher-copy small {
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 500;
+}
+
+body:has(> #app-sidebar) .store-switcher-copy strong {
+  color: var(--ink);
+  font-size: 13px;
+  font-weight: 600;
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+
+body:has(> #app-sidebar) .store-switcher-trigger > img {
+  transform: rotate(90deg);
+}
+
+body:has(> #app-sidebar) .store-switcher-trigger[aria-expanded="true"] > img {
+  transform: rotate(-90deg);
+}
+
+body:has(> #app-sidebar) .store-switcher-options {
+  position: absolute;
+  z-index: 10;
+  top: calc(100% + 6px);
+  inset-inline: 0;
+  max-height: 260px;
+  padding: 5px;
+  overflow-y: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  box-shadow: var(--merchant-shadow);
+}
+
+body:has(> #app-sidebar) .store-switcher-options button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  min-height: 44px;
+  padding: 10px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--ink);
+  font: inherit;
+  text-align: left;
+}
+
+body:has(> #app-sidebar) .store-switcher-options button span {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+body:has(> #app-sidebar) .store-switcher-options button:is(:hover, [aria-current="true"]) {
+  background: var(--merchant-teal-soft);
 }
 
 body:has(> #app-sidebar) .app-sidebar nav {
@@ -487,7 +610,7 @@ body:has(> #app-sidebar) label.field {
   font-weight: 550;
 }
 
-body:has(> #app-sidebar) :is(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea) {
+body:has(> #app-sidebar) :where(input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="hidden"]):not([type="color"]):not([type="file"]):not([type="submit"]):not([type="button"]):not([type="reset"]):not([type="image"]), select, textarea) {
   min-height: 40px;
   padding: 9px 11px;
   border: 1px solid #cbd5de;
@@ -766,17 +889,153 @@ body:has(> #app-sidebar) tbody tr:has(input[type="checkbox"]:checked) {
 }
 
 body:has(> #app-sidebar) .order-number-link {
-  border-color: #cfe1ec;
-  border-radius: 5px;
-  background: #f0f6fc;
-  color: var(--merchant-blue);
-  box-shadow: none;
+  display: inline-flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  flex: 0 0 auto;
+  width: max-content;
+  min-width: 106px;
+  min-height: 36px;
+  padding: 8px 10px;
+  border: 1px solid #d7e0e6;
+  border-radius: 6px;
+  background: #f5f8fa;
+  color: #263b45;
+  white-space: nowrap;
+  overflow-wrap: normal;
+  text-decoration: none;
+  box-shadow: 0 1px 2px rgb(32 43 50 / 4%);
+  font-size: 13px;
+  line-height: 18px;
+  font-variant-numeric: tabular-nums;
+  cursor: pointer;
 }
 
 body:has(> #app-sidebar) .order-number-link:hover {
-  border-color: #a8c5e3;
-  background: #e4effb;
-  color: #20568f;
+  border-color: #a1b8bd;
+  background: #edf4f5;
+  color: #173e40;
+  text-decoration: none;
+  box-shadow: 0 2px 5px rgb(32 43 50 / 7%);
+  transform: none;
+}
+
+body:has(> #app-sidebar) .order-number-link:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+  border-color: var(--focus);
+}
+
+body:has(> #app-sidebar) .order-number-link:active {
+  background: #e3edee;
+  box-shadow: none;
+}
+
+body:has(> #app-sidebar) .order-number-link strong {
+  color: inherit;
+  font-size: 13px;
+  font-weight: 650;
+}
+
+body:has(> #app-sidebar) .order-number-link img {
+  flex: 0 0 14px;
+  width: 14px;
+  min-width: 14px;
+  max-width: 14px;
+  height: 14px;
+  opacity: .55;
+}
+
+body:has(> #app-sidebar) .order-number-link:is(:hover, :focus-visible) img {
+  opacity: .85;
+}
+
+body:has(> #app-sidebar) .order-number-link > * {
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow-wrap: normal;
+}
+
+body:has(> #app-sidebar) .order-number-cell {
+  min-width: 138px;
+  white-space: nowrap;
+}
+
+body:has(> #app-sidebar) .orders-table input[type="checkbox"] {
+  width: 16px;
+  height: 16px;
+  margin: 0;
+  vertical-align: middle;
+}
+
+/* Order information is document content, not a second navigation sidebar. */
+body:has(> #app-sidebar) .order-detail-grid {
+  grid-template-columns: minmax(0, 1.65fr) minmax(280px, .85fr);
+  gap: 32px;
+}
+
+body:has(> #app-sidebar) .order-detail-grid aside {
+  padding: 0 0 0 28px;
+  border-left: 1px solid var(--line);
+  background: transparent;
+  color: var(--ink);
+  gap: 0;
+}
+
+body:has(> #app-sidebar) .order-detail-grid .panel {
+  margin: 0;
+  padding: 24px 0;
+}
+
+body:has(> #app-sidebar) .order-detail-grid > :is(aside, .order-detail-primary) > .panel:first-child {
+  padding-top: 0;
+  border-top: 0;
+}
+
+body:has(> #app-sidebar) .order-detail-grid :is(address, .panel > p) {
+  margin: 12px 0 0;
+}
+
+body:has(> #app-sidebar) .order-detail-grid a:not(.button-link) {
+  color: var(--merchant-blue);
+  text-decoration: none;
+}
+
+body:has(> #app-sidebar) .order-detail-grid a:not(.button-link):hover {
+  text-decoration: underline;
+}
+
+body:has(> #app-sidebar) .order-detail-statuses > span {
+  padding: 4px 18px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  border-radius: 0;
+  background: transparent;
+}
+
+body:has(> #app-sidebar) .order-detail-statuses > span:first-child {
+  padding-left: 0;
+  border-left: 0;
+}
+
+@media (max-width: 1100px) {
+  body:has(> #app-sidebar) .order-detail-grid {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  body:has(> #app-sidebar) .order-detail-grid aside {
+    padding: 24px 0 0;
+    border-top: 1px solid var(--line);
+    border-left: 0;
+  }
+}
+
+@media (max-width: 600px) {
+  body:has(> #app-sidebar) .order-detail-statuses > span:nth-child(odd) {
+    padding-left: 0;
+    border-left: 0;
+  }
 }
 
 body:has(> #app-sidebar) :is(.status-badge, .pill, .status, .store-state) {
@@ -1452,6 +1711,90 @@ body:has(> #app-sidebar) .online-theme-editor .store-editor-panel {
   border: 0;
 }
 
+body:has(> #app-sidebar) .online-theme-editor #store-connections {
+  margin: 0;
+  padding: 0 20px;
+  border: 0;
+}
+
+body:has(> #app-sidebar) .store-connection-row {
+  display: grid;
+  gap: 18px;
+  padding: 24px 0;
+}
+
+body:has(> #app-sidebar) .store-connection-row:first-child {
+  border-top: 0;
+}
+
+body:has(> #app-sidebar) .store-connection-identity {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+body:has(> #app-sidebar) .store-connection-identity > img {
+  flex: 0 0 36px;
+  width: 36px;
+  min-width: 36px;
+  max-width: 36px;
+  height: 36px;
+  padding: 9px;
+  border-radius: 6px;
+  background: var(--merchant-blue-soft);
+}
+
+body:has(> #app-sidebar) .store-connection-identity > div {
+  min-width: 0;
+}
+
+body:has(> #app-sidebar) .store-connection-identity strong {
+  font-size: 14px;
+  overflow-wrap: anywhere;
+}
+
+body:has(> #app-sidebar) .store-connection-row small {
+  margin: 4px 0 0;
+  font-size: 12px;
+}
+
+body:has(> #app-sidebar) .store-connection-row .field {
+  display: grid;
+  gap: 8px;
+  margin: 0;
+}
+
+body:has(> #app-sidebar) .store-connection-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: nowrap;
+  gap: 6px;
+}
+
+body:has(> #app-sidebar) .store-connection-actions > .primary {
+  margin-right: auto;
+  white-space: nowrap;
+}
+
+body:has(> #app-sidebar) .store-connection-actions > .icon-button {
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 38px;
+  width: 38px;
+  height: 38px;
+  min-height: 38px;
+  padding: 0;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--ink);
+}
+
+body:has(> #app-sidebar) .store-connection-actions > .icon-button:hover {
+  background: var(--merchant-hover);
+}
+
 body:has(> #app-sidebar) .store-editor-fieldset {
   border: 0;
   border-radius: 0;
@@ -2067,13 +2410,27 @@ body:has(> #app-sidebar) .summary-stat:has(.summary-stat-label img) .summary-sta
   }
 
   body:has(> #app-sidebar) .orders-table {
-    min-width: 1000px;
+    min-width: 100%;
     table-layout: auto;
   }
 
   body:has(> #app-sidebar) .orders-table :is(th, td) {
     display: table-cell;
     width: auto;
+    white-space: nowrap;
+    overflow-wrap: normal;
+    word-break: normal;
+  }
+
+  body:has(> #app-sidebar) .orders-table :is(.order-customer-cell, .order-items-cell) {
+    min-width: 160px;
+    white-space: normal;
+    overflow-wrap: normal;
+  }
+
+  body:has(> #app-sidebar) .orders-table :is(.order-customer-cell, .order-items-cell) * {
+    overflow-wrap: normal;
+    word-break: normal;
   }
 
   body:has(> #app-sidebar) .orders-table .order-select-cell {
