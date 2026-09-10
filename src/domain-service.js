@@ -343,7 +343,7 @@ export class DomainService {
     const domain = this.getDomain(storeId, id),
       ownershipRecord = domain.dnsRecords.find((record) => record.type === "TXT"),
       supportsApexAlias =
-        domain.hostnameKind === "apex" &&
+        domain.dnsRecords[0].type === "ALIAS / ANAME" &&
         typeof this.dnsResolver.resolve4 === "function",
       routeLookup =
         domain.dnsRecords[0].type === "A"
@@ -396,7 +396,7 @@ export class DomainService {
             ? "error"
             : "waiting",
       overallStatus = dnsReady
-        ? "PENDING_VERIFICATION"
+        ? domain.overallStatus === "ACTIVE" ? "ACTIVE" : "PENDING_VERIFICATION"
         : "PENDING_CONFIGURATION",
       errorCode = dnsReady
         ? ""
@@ -423,7 +423,7 @@ export class DomainService {
       .run(
         dnsStatus,
         ownershipReady ? "verified" : txtValues.length ? "failed" : "pending",
-        routeReady ? "verified" : "pending",
+        routeReady ? overallStatus === "ACTIVE" ? "active" : "verified" : "pending",
         overallStatus,
         legacyStatus(overallStatus),
         routeValues.join(", "),
@@ -434,12 +434,13 @@ export class DomainService {
         storeId,
         id,
       );
+    // Bound timestamps adopt each column's type, including legacy PostgreSQL TEXT columns.
     if (ownershipReady)
       this.db
         .prepare(
-          "UPDATE custom_domains SET ownership_verified_at=COALESCE(ownership_verified_at,CURRENT_TIMESTAMP),verified_at=COALESCE(verified_at,CURRENT_TIMESTAMP) WHERE store_id=? AND id=?",
+          "UPDATE custom_domains SET ownership_verified_at=COALESCE(ownership_verified_at,?),verified_at=COALESCE(verified_at,?) WHERE store_id=? AND id=?",
         )
-        .run(storeId, id);
+        .run(new Date().toISOString(), new Date().toISOString(), storeId, id);
     this.#audit(
       storeId,
       id,
@@ -468,10 +469,10 @@ export class DomainService {
       .prepare(
         `UPDATE custom_domains SET ownership_status='verified',dns_status='verified',routing_status='verified',
          overall_status='PENDING_SSL',status='ssl_pending',ssl_status='pending',error_code='',error_message='',last_error='',
-         ownership_verified_at=COALESCE(ownership_verified_at,CURRENT_TIMESTAMP),verified_at=COALESCE(verified_at,CURRENT_TIMESTAMP),
+         ownership_verified_at=COALESCE(ownership_verified_at,?),verified_at=COALESCE(verified_at,?),
          updated_at=CURRENT_TIMESTAMP WHERE store_id=? AND id=?`,
       )
-      .run(storeId, id);
+      .run(new Date().toISOString(), new Date().toISOString(), storeId, id);
     this.#audit(storeId, id, "OWNERSHIP_VERIFIED", actor);
     let current = this.getDomain(storeId, id);
     if (!this.sslProvider?.provisionDomain) return current;
@@ -570,7 +571,7 @@ export class DomainService {
         : "'PENDING_CONFIGURATION','PENDING_VERIFICATION','PENDING_SSL','ERROR'",
       pending = this.db
       .prepare(
-        `SELECT store_id,id FROM custom_domains WHERE overall_status IN (${statuses}) ORDER BY COALESCE(last_checked_at,created_at) ASC`,
+        `SELECT store_id,id FROM custom_domains WHERE overall_status IN (${statuses}) ORDER BY COALESCE(CAST(last_checked_at AS TEXT),CAST(created_at AS TEXT)) ASC`,
       )
       .all();
     const results = [];

@@ -3919,7 +3919,7 @@ function domainsView() {
           button.textContent = "Checking DNS…";
           try {
             const checked = await api(`/api/stores/${storeId}/domains/${current.id}/check-dns`, { method: "POST", body: "{}" });
-            render(checked, 3);
+            render(checked, checked.overallStatus === "ACTIVE" ? 5 : 3);
           } catch (error) {
             toast(error.message);
             button.disabled = false;
@@ -3981,7 +3981,7 @@ function domainsView() {
       (button.onclick = async () => {
         try {
           const result = await api(`/api/stores/${storeId}/domains/${button.dataset.id}/check-dns`, { method: "POST", body: "{}" });
-          showWizard(result, 3);
+          showWizard(result, result.overallStatus === "ACTIVE" ? 5 : 3);
         } catch (error) {
           toast(error.message);
         }
