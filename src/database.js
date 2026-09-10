@@ -257,6 +257,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
         CREATE TABLE IF NOT EXISTS merchant_users (
           id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
           display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+          google_subject TEXT NOT NULL DEFAULT '',
+          picture_url TEXT NOT NULL DEFAULT '',
           active INTEGER NOT NULL DEFAULT 1,
           created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
           updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -279,6 +281,10 @@ export function createDatabase(filename = "data/commera2.sqlite") {
         CREATE INDEX IF NOT EXISTS idx_store_memberships_store ON store_memberships(store_id,user_id);
         CREATE INDEX IF NOT EXISTS idx_merchant_sessions_token ON merchant_sessions(token_hash);
         CREATE INDEX IF NOT EXISTS idx_merchant_sessions_expiry ON merchant_sessions(expires_at);
+        ALTER TABLE merchant_users ADD COLUMN IF NOT EXISTS google_subject TEXT NOT NULL DEFAULT '';
+        ALTER TABLE merchant_users ADD COLUMN IF NOT EXISTS picture_url TEXT NOT NULL DEFAULT '';
+        CREATE UNIQUE INDEX IF NOT EXISTS idx_merchant_users_google_subject
+          ON merchant_users(google_subject) WHERE google_subject<>'';
         CREATE TABLE IF NOT EXISTS order_events (
           id BIGSERIAL PRIMARY KEY,
           store_id INTEGER NOT NULL REFERENCES stores(id) ON DELETE CASCADE,
@@ -446,6 +452,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
     CREATE TABLE IF NOT EXISTS merchant_users (
       id TEXT PRIMARY KEY, email TEXT NOT NULL UNIQUE,
       display_name TEXT NOT NULL, password_hash TEXT NOT NULL,
+      google_subject TEXT NOT NULL DEFAULT '',
+      picture_url TEXT NOT NULL DEFAULT '',
       active INTEGER NOT NULL DEFAULT 1,
       created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
@@ -1077,6 +1085,23 @@ export function createDatabase(filename = "data/commera2.sqlite") {
     CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_ip ON cod_bot_attempts(store_id,ip_address,created_at);
     CREATE INDEX IF NOT EXISTS idx_bot_attempts_store_device ON cod_bot_attempts(store_id,device_id,created_at);
   `);
+  const merchantUserColumns = new Set(
+    db
+      .prepare("PRAGMA table_info(merchant_users)")
+      .all()
+      .map((column) => column.name),
+  );
+  if (!merchantUserColumns.has("google_subject"))
+    db.exec(
+      "ALTER TABLE merchant_users ADD COLUMN google_subject TEXT NOT NULL DEFAULT ''",
+    );
+  if (!merchantUserColumns.has("picture_url"))
+    db.exec(
+      "ALTER TABLE merchant_users ADD COLUMN picture_url TEXT NOT NULL DEFAULT ''",
+    );
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_merchant_users_google_subject ON merchant_users(google_subject) WHERE google_subject<>''",
+  );
   const liveEventColumns = new Set(
     db
       .prepare("PRAGMA table_info(live_visitor_events)")

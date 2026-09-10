@@ -474,6 +474,20 @@ canvas {
   margin: 0 0 30px;
   overflow: hidden;
 }
+.landing.imported-page {
+  width: 100%;
+  max-width: none;
+  padding: 0;
+}
+.landing.imported-page .imported-safe {
+  width: 100%;
+  max-width: none;
+  margin: 0;
+  padding: 0;
+  border-radius: 0;
+  background: transparent;
+  overflow: visible;
+}
 .imported-safe img {
   max-width: 100%;
   height: auto;

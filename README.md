@@ -81,6 +81,32 @@ The migration refuses to overwrite a non-empty PostgreSQL schema.
 `DATABASE_MODE=auto` selects PostgreSQL when `DATABASE_URL` is present and SQLite
 otherwise. Tests that explicitly request an in-memory database continue to use SQLite.
 
+## Google merchant sign-in
+
+Create an OAuth client in Google Cloud Console with application type **Web
+application**. Configure these exact authorized redirect URIs for the environments
+you use:
+
+```text
+http://localhost:4173/api/auth/google/callback
+https://commera2.onrender.com/api/auth/google/callback
+```
+
+Set the following server environment variables locally and in Render:
+
+```bash
+APP_BASE_URL=https://commera2.onrender.com
+GOOGLE_CLIENT_ID=your-web-client-id.apps.googleusercontent.com
+GOOGLE_CLIENT_SECRET=your-google-client-secret
+AUTH_OAUTH_STATE_SECRET=a-separate-random-secret-at-least-32-characters-long
+```
+
+For local development, use `APP_BASE_URL=http://localhost:4173`. The redirect URI
+must match Google Cloud exactly, including scheme, hostname, port, path, and trailing
+slash. Secrets belong only in the ignored `.env` file or Render environment settings;
+never commit them. Commera requests only identity scopes and does not store Google
+access or refresh tokens.
+
 ## Render persistence
 
 Do not use SQLite for a real Render deployment. A free Render web service can

@@ -244,6 +244,30 @@ function safeImportedStyles(input) {
   return safe.trim() ? `<style>${safe}</style>` : "";
 }
 
+export const importedPageStaticStyle = `<style data-commera-import-static>
+.reveal,.reveal-scale,[data-aos],.wow{opacity:1!important;visibility:visible!important;transform:none!important}
+</style>`;
+
+export function staticImportedPageHtml(input) {
+  const html = String(input || "").trim();
+  if (!html || html.includes("data-commera-import-static")) return html;
+  return `${html}\n${importedPageStaticStyle}`;
+}
+
+function importedPageWarnings(input) {
+  const html = String(input || "");
+  const warnings = [];
+  if (
+    /(?:src|srcset|poster)\s*=\s*["']\s*(?:file:\/{2,3}|[a-z]:[\\/]|\.{1,2}[\\/])/i.test(
+      html,
+    )
+  )
+    warnings.push(
+      "This page references image or media files from a local computer. Those files cannot be published from the HTML alone; replace them with HTTPS or embedded data URLs.",
+    );
+  return warnings;
+}
+
 function prepareImportedPageHtml(input) {
   const html = String(input || "");
   const styles = [...html.matchAll(/<style\b[^>]*>([\s\S]*?)<\/style\s*>/gi)]
@@ -253,7 +277,7 @@ function prepareImportedPageHtml(input) {
   const body = html
     .replace(/<style\b[^>]*>[\s\S]*?<\/style\s*>/gi, "")
     .replace(/<head\b[^>]*>[\s\S]*?<\/head\s*>/gi, "");
-  return `${styles}${sanitizeImportedHtml(body)}`.trim();
+  return staticImportedPageHtml(`${styles}${sanitizeImportedHtml(body)}`);
 }
 
 export function processPageImport(input) {
@@ -271,7 +295,8 @@ export function processPageImport(input) {
   if (!buffer.length) throw Error("Uploaded page HTML is empty");
   if (buffer.length > 500_000)
     throw Error("Uploaded page exceeds the 500 KB limit");
-  let sanitized = prepareImportedPageHtml(buffer.toString("utf8"));
+  const source = buffer.toString("utf8");
+  let sanitized = prepareImportedPageHtml(source);
   const body = sanitized.match(/<body\b[^>]*>([\s\S]*?)<\/body\s*>/i);
   if (body) sanitized = body[1].trim();
   sanitized = sanitized
@@ -286,6 +311,7 @@ export function processPageImport(input) {
     mimeType: mime || "text/html",
     previewHtml: sanitized,
     sizeBytes: buffer.length,
+    warnings: importedPageWarnings(source),
   };
 }
 

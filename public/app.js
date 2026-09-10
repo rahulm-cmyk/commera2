@@ -280,6 +280,7 @@ modal.addEventListener("close", () => closeFloatingMenu());
 let stores = [],
   merchantIdentity = null,
   csrfToken = "",
+  googleAuthEnabled = false,
   storeId = null,
   data = null,
   ops = null,
@@ -590,7 +591,8 @@ async function refreshStores() {
 }
 function renderAuthentication() {
   document.body.classList.add("auth-screen");
-  content.innerHTML = `<section class="auth-card"><div class="auth-brand"><i>C2</i><div><strong>Commera2</strong><span>Merchant workspace</span></div></div><div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="auth-form"><label class="field auth-name" hidden>Your name<input name="displayName" autocomplete="name"></label><label class="field">Email<input name="email" type="email" autocomplete="email" required></label><label class="field">Password<input name="password" type="password" autocomplete="current-password" minlength="10" required></label><p class="helper-text auth-password-help" hidden>Use at least 10 characters with a letter and number.</p><button class="primary" type="submit">Sign in</button><p id="auth-message" role="status"></p></form></section>`;
+  const authError = new URLSearchParams(location.search).get("authError") || "";
+  content.innerHTML = `<section class="auth-card"><div class="auth-brand"><i>C2</i><div><strong>Commera2</strong><span>Merchant workspace</span></div></div>${googleAuthEnabled ? '<a class="google-auth-button" href="/api/auth/google?returnTo=%2Foverview"><span aria-hidden="true">G</span>Continue with Google</a><div class="auth-divider"><span>or use email</span></div>' : ""}<div class="auth-tabs"><button class="active" type="button" data-auth-mode="login">Sign in</button><button type="button" data-auth-mode="register">Create account</button></div><form id="auth-form"><label class="field auth-name" hidden>Your name<input name="displayName" autocomplete="name"></label><label class="field">Email<input name="email" type="email" autocomplete="email" required></label><label class="field">Password<input name="password" type="password" autocomplete="current-password" minlength="10" required></label><p class="helper-text auth-password-help" hidden>Use at least 10 characters with a letter and number.</p><button class="primary" type="submit">Sign in</button><p id="auth-message" role="status"${authError ? ' data-state="error"' : ""}>${esc(authError)}</p></form></section>`;
   let mode = "login";
   const form = $("#auth-form"),
     name = $(".auth-name"),
@@ -636,6 +638,13 @@ function renderAuthentication() {
   };
 }
 async function bootstrap() {
+  try {
+    googleAuthEnabled = Boolean(
+      (await api("/api/auth/google/status")).enabled,
+    );
+  } catch {
+    googleAuthEnabled = false;
+  }
   try {
     const result = await api("/api/auth/me");
     merchantIdentity = result.user;
@@ -2241,6 +2250,25 @@ function fileToBase64(file) {
     reader.readAsDataURL(file);
   });
 }
+function importedPreviewDocument(html) {
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><style>.reveal,.reveal-scale,[data-aos],.wow{opacity:1!important;visibility:visible!important;transform:none!important}</style></head><body>${html || ""}</body></html>`;
+}
+function showImportedPreview(area, result) {
+  area.hidden = false;
+  let warning = area.querySelector(".import-warning");
+  if (!warning) {
+    warning = document.createElement("p");
+    warning.className = "import-warning";
+    warning.setAttribute("role", "alert");
+    area.prepend(warning);
+  }
+  const warnings = Array.isArray(result.warnings) ? result.warnings : [];
+  warning.hidden = warnings.length === 0;
+  warning.textContent = warnings.join(" ");
+  area.querySelector("iframe").srcdoc = importedPreviewDocument(
+    result.previewHtml,
+  );
+}
 function uploadPageWizard() {
   modalContent.innerHTML = `<h2>Upload / Import Pre-Built Page</h2><div class="quick-flow"><div class="step"><b>01</b>Upload</div><div class="step"><b>02</b>Process</div><div class="step"><b>03</b>Preview</div><div class="step"><b>04</b>Connect Product</div><div class="step"><b>05</b>Configure CTA/COD</div><div class="step"><b>06</b>Save</div><div class="step"><b>07</b>Publish</div></div><label class="field">Page Name<input name="title" required></label><label class="field">Page File / Supported Import<input name="file" type="file" accept=".html,.htm,text/html" required></label><button class="secondary" id="process-page-file" type="button">Process & Preview</button><div id="import-preview" hidden><iframe title="Preview" sandbox style="width:100%;min-height:260px"></iframe><label class="field">Connected Product<select name="productId" required>${productOptions()}</select></label><label class="field">Status<select name="status" required><option value="draft">Draft</option><option value="published">Published</option></select></label><label class="field">URL slug<input name="slug" required></label><label class="field">CTA text<input name="ctaText" value="Order with COD" required></label><label class="field checkbox"><input name="codEnabled" type="checkbox" checked> <span>Configure CTA/COD — enable working COD checkout</span></label><button class="primary" type="submit">Save</button></div><p class="notice">Supported Import: .html and .htm, maximum 500 KB. Scripts, forms, iframes, event handlers, and unsafe links are removed.</p>`;
   const form = $("#modal-form");
@@ -2260,8 +2288,7 @@ function uploadPageWizard() {
         body: JSON.stringify(processed),
       });
       const area = $("#import-preview");
-      area.hidden = false;
-      area.querySelector("iframe").srcdoc = result.previewHtml;
+      showImportedPreview(area, result);
       toast("Page processed — Preview ready");
     } catch (error) {
       toast(error.message);
@@ -5201,8 +5228,7 @@ const productPageOverrides = (() => {
             { method: "POST", body: JSON.stringify(processed) },
           ),
           preview = $("#product-import-preview");
-        preview.hidden = false;
-        preview.querySelector("iframe").srcdoc = result.previewHtml;
+        showImportedPreview(preview, result);
       } catch (error) {
         toast(error.message);
       }
@@ -6068,8 +6094,7 @@ const simplifiedProductPages = (() => {
             { method: "POST", body: JSON.stringify(processed) },
           ),
           preview = $("#product-import-preview");
-        preview.hidden = false;
-        preview.querySelector("iframe").srcdoc = result.previewHtml;
+        showImportedPreview(preview, result);
       } catch (error) {
         toast(error.message);
       }
@@ -6701,7 +6726,7 @@ async function openVisualProductPageBuilder(pageId, helpers) {
     if (page.creationMethod === "upload" && page.importedHtml) {
       canvas.innerHTML = `<iframe id="builder-imported-page-preview" title="Imported page preview" sandbox></iframe>`;
       const frame = $("#builder-imported-page-preview");
-      frame.srcdoc = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"></head><body>${page.importedHtml}</body></html>`;
+      frame.srcdoc = importedPreviewDocument(page.importedHtml);
       return;
     }
     canvas.innerHTML = `<div class="builder-page-inner">${builder.sections.map(renderPreviewSection).join("") || '<div class="blank-page"><h3>Blank page</h3><p>Add a section to start building.</p></div>'}</div>`;

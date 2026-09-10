@@ -37,7 +37,7 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   const base = `http://127.0.0.1:${app.port}`;
   const { store, product } = await setup(base);
   const source =
-      '<!doctype html><html><head><title>Imported Hair Ritual</title><style>.ritual{color:teal} @import url(https://bad.example/style.css);</style><script>alert(1)</script></head><body><main class="ritual"><h1 onclick="bad()">Imported Hair Ritual</h1><p>Real imported content.</p><a href="javascript:bad()">Buy now</a><form><input></form></main></body></html>',
+      '<!doctype html><html><head><title>Imported Hair Ritual</title><style>.ritual{color:teal}.reveal{opacity:0;transform:translateY(40px)}.reveal.is-visible{opacity:1;transform:none} @import url(https://bad.example/style.css);</style><script>alert(1)</script></head><body><main class="ritual reveal"><h1 onclick="bad()">Imported Hair Ritual</h1><p>Real imported content.</p><img src="C:/Users/Test/hero.png" alt="Local hero"><a class="buy-btn" href="#buy">Buy now</a><a href="javascript:bad()">Bad link</a><form><input></form></main></body></html>',
     fileContentBase64 = Buffer.from(source).toString("base64");
   let result = await call(
     base,
@@ -49,6 +49,10 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   assert.equal(result.body.fileName, "ritual.html");
   assert.match(result.body.previewHtml, /Imported Hair Ritual/);
   assert.match(result.body.previewHtml, /\.ritual\{color:teal\}/);
+  assert.match(result.body.previewHtml, /data-commera-import-static/);
+  assert.match(result.body.previewHtml, /\.reveal,.reveal-scale/);
+  assert.equal(result.body.warnings.length, 1);
+  assert.match(result.body.warnings[0], /local computer/i);
   assert.doesNotMatch(result.body.previewHtml, /@import|bad\.example|<title/i);
   assert.doesNotMatch(
     result.body.previewHtml,
@@ -79,6 +83,10 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   assert.equal(result.response.status, 200);
   assert.match(result.body, /Real imported content/);
   assert.match(result.body, /Order Hair Oil/);
+  assert.match(result.body, /class="landing imported-page"/);
+  assert.doesNotMatch(result.body, /class="landing-hero/);
+  assert.doesNotMatch(result.body, /SHOP THE PRODUCT|Customer Reviews/);
+  assert.match(result.body, /\.imported-safe a\[href="#buy"\]/);
   assert.doesNotMatch(result.body, /id="cod-form"/);
   result = await call(
     base,
@@ -91,7 +99,8 @@ test("uploaded HTML file is processed, previewed, connected, configured for COD,
   assert.equal(result.response.status, 200);
   assert.match(result.body, /Real imported content/);
   assert.match(result.body, /Order Hair Oil/);
-  assert.match(result.body, /data-direct-checkout="true"/);
+  assert.match(result.body, /dataset\.directCheckout='true'/);
+  assert.doesNotMatch(result.body, /class="landing-hero/);
   assert.doesNotMatch(result.body, /id="cod-form"/);
   assert.doesNotMatch(result.body, /onclick|javascript:bad|<form><input/i);
 });

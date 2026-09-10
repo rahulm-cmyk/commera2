@@ -4040,6 +4040,14 @@ dialog {
   border-radius: 10px;
   margin: 14px 0;
 }
+.import-warning {
+  margin: 14px 0 0;
+  padding: 12px 14px;
+  border: 1px solid #d9a514;
+  background: #fff7d6;
+  color: #6d4c00;
+  font-weight: 650;
+}
 #builder-imported-page-preview {
   display: block;
   width: 100%;
@@ -5544,6 +5552,44 @@ body.auth-screen #content {
 .auth-tabs button.active {
   background: #fff;
   box-shadow: 0 2px 8px rgb(23 32 25 / 8%);
+}
+.google-auth-button {
+  min-height: 48px;
+  margin-bottom: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  border: 1px solid #cfd4d1;
+  border-radius: 8px;
+  background: #fff;
+  color: #202824;
+  font-weight: 700;
+  text-decoration: none;
+}
+.google-auth-button:hover {
+  background: #f8faf9;
+  border-color: #9ca6a0;
+}
+.google-auth-button span {
+  font-size: 18px;
+  font-weight: 800;
+  color: #1a73e8;
+}
+.auth-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 0 0 18px;
+  color: #768078;
+  font-size: 12px;
+}
+.auth-divider::before,
+.auth-divider::after {
+  content: "";
+  height: 1px;
+  flex: 1;
+  background: #e1e5e2;
 }
 #auth-form {
   display: grid;

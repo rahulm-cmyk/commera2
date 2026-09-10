@@ -6,7 +6,7 @@ import { fileURLToPath } from "node:url";
 import { createDatabase } from "./database.js";
 import { CommerceService } from "./commerce-service.js";
 import { ProductOperationsService } from "./product-operations-service.js";
-import { ProjectService } from "./project-service.js";
+import { ProjectService, staticImportedPageHtml } from "./project-service.js";
 import { DeliveryService } from "./delivery-service.js";
 import { DomainService } from "./domain-service.js";
 import { createHttpsDomainProvider } from "./https-domain-provider.js";
@@ -28,6 +28,7 @@ import { configuredOtpProviders } from "./otp-providers.js";
 import { OtpProviderConfigService } from "./otp-provider-config-service.js";
 import { BotProtectionService } from "./bot-protection-service.js";
 import { AuthService } from "./auth-service.js";
+import { createGoogleAuthProvider } from "./google-auth-provider.js";
 import { pageTemplates } from "./page-templates.js";
 import { renderBlocks, blockSectionStyle } from '../public/page-blocks.js';
 import { confirmationAnimation, orderConfirmation, confirmationIcon } from "./confirmation.js";
@@ -189,6 +190,14 @@ const merchantSessionCookie = (token, expiresAt) => {
 };
 const expiredMerchantCookie = () =>
   `commera2_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+const googleOAuthCookie = (value, maxAge = 600) =>
+  `commera2_google_oauth=${encodeURIComponent(value)}; Path=/api/auth/google/callback; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
+const safeReturnPath = (value) => {
+  const path = String(value || "").trim();
+  return path.startsWith("/") && !path.startsWith("//") && !path.includes("\\")
+    ? path
+    : "/overview";
+};
 const htmlEscape = (value) =>
   String(value).replace(
     /[&<>'"]/g,
@@ -570,9 +579,10 @@ function publicPage({
   const urgencyHtml = urgency
     ? `<div class="urgency" role="status"><strong>${htmlEscape(urgencyMessage)}</strong></div>`
     : "";
-  const imported =
-    page.creationMethod === "upload" && page.importedHtml
-      ? `<section class="imported-safe">${page.importedHtml}</section>`
+  const isImportedPage =
+      page.creationMethod === "upload" && Boolean(page.importedHtml),
+    imported = isImportedPage
+      ? `<section class="imported-safe">${staticImportedPageHtml(page.importedHtml)}</section>`
       : "";
   const ctaText = htmlEscape(
     (content.ctaText || "").trim() || "Order with COD",
@@ -631,11 +641,11 @@ function publicPage({
     sameTab = checkoutDisplay.sameTab !== false,
     customerExperienceScript = `<script>(()=>{const checkout=document.querySelector('#checkout'),form=document.querySelector('#cod-form'),firstField=form?.querySelector('[name="name"]'),quantity=form?.querySelector('[name="quantity"]'),bundleField=form?.querySelector('[name="bundleId"]'),summaryBundle=document.querySelector('#summary-bundle'),summaryPrice=document.querySelector('#summary-product-price'),heroPrice=document.querySelector('#hero-price'),submit=form?.querySelector('.place-order-button');document.querySelectorAll('a.hero-cta[href="#checkout"]').forEach(link=>link.addEventListener('click',event=>{event.preventDefault();checkout?.scrollIntoView({behavior:'smooth',block:'start'});setTimeout(()=>firstField?.focus({preventScroll:true}),550)}));document.querySelectorAll('[data-product-media]').forEach(button=>button.addEventListener('click',()=>{const host=document.querySelector('#product-main-media'),type=button.dataset.productMediaType||'image/jpeg',name=button.dataset.productMediaName||'Product media';if(host)host.innerHTML=type.startsWith('video/')?'<video controls src="'+button.dataset.productMedia+'" aria-label="'+name.replace(/["<>]/g,'')+'"></video>':'<img src="'+button.dataset.productMedia+'" alt="'+name.replace(/["<>]/g,'')+'">';document.querySelectorAll('[data-product-media]').forEach(item=>item.classList.toggle('active',item===button))}));document.querySelectorAll('[name="heroBundleId"]').forEach(option=>option.addEventListener('change',()=>{if(!option.checked)return;if(bundleField)bundleField.value=option.value;if(quantity){quantity.value=option.dataset.quantity||1;quantity.readOnly=Boolean(option.value);quantity.dispatchEvent(new Event('input',{bubbles:true}))}const label=option.closest('label')?.querySelector('strong')?.textContent||'Single item',formatted=FORMAT_MONEY(Number(option.dataset.price||${Number(product.pricePaise)}));if(summaryBundle)summaryBundle.textContent=label+' · Quantity '+(option.dataset.quantity||1);if(summaryPrice)summaryPrice.textContent=formatted;if(heroPrice)heroPrice.textContent=formatted}));const reviewForm=document.querySelector('#review-form'),openReview=document.querySelector('#open-review-form'),closeReview=document.querySelector('#close-review-form'),cancelReview=document.querySelector('#cancel-review');const showReview=show=>{if(!reviewForm)return;reviewForm.hidden=!show;if(show){document.querySelector('#review-status').textContent='';reviewForm.scrollIntoView({behavior:'smooth',block:'center'});setTimeout(()=>reviewForm.querySelector('[name="rating"]')?.focus(),350)}};openReview?.addEventListener('click',()=>showReview(true));closeReview?.addEventListener('click',()=>showReview(false));cancelReview?.addEventListener('click',()=>showReview(false));const filesInput=document.querySelector('#review-images'),preview=document.querySelector('#review-image-preview');let chosenFiles=[];reviewForm?.addEventListener('reset',()=>{chosenFiles=[];if(preview)preview.innerHTML=''});const syncFiles=()=>{if(typeof DataTransfer==='undefined')return;const transfer=new DataTransfer();chosenFiles.forEach(file=>transfer.items.add(file));filesInput.files=transfer.files};const drawFiles=()=>{if(!preview)return;preview.innerHTML='';chosenFiles.forEach((file,index)=>{const item=document.createElement('span'),image=document.createElement('img'),remove=document.createElement('button');image.src=URL.createObjectURL(file);image.alt='Selected review image';remove.type='button';remove.textContent='Remove';remove.addEventListener('click',()=>{chosenFiles.splice(index,1);syncFiles();drawFiles()});item.append(image,remove);preview.append(item)})};filesInput?.addEventListener('change',()=>{chosenFiles=[...filesInput.files].slice(0,5);syncFiles();drawFiles()});const pincodeStatus=document.querySelector('#pincode-status');if(pincodeStatus){const cleanStatus=()=>{const value=pincodeStatus.textContent;if(value==='Checking delivery location…')pincodeStatus.textContent='Fetching location...';else if(value.startsWith('Delivery available · ')){const location=value.replace('Delivery available · ','').replace(/, India$/,'');pincodeStatus.textContent='✓ Delivery available in '+location;pincodeStatus.dataset.state='success'}else if(value==='Please enter a valid pincode')pincodeStatus.textContent='Please enter a valid six-digit pincode.';else if(value==='Delivery is not available at this pincode')pincodeStatus.textContent='Sorry, delivery is currently unavailable at this pincode.'};new MutationObserver(cleanStatus).observe(pincodeStatus,{childList:true,characterData:true,subtree:true})}if(submit&&!form?.querySelector('[name="pincode"]')?.value)submit.disabled=true;})();</script>`;
   const directCheckoutScript = directCheckout
-    ? `<script>(()=>{const STORE=${scriptJson(page.storeSlug)},PAGE=${scriptJson(page.slug)},SAME_TAB=${sameTab},quantity=document.querySelector('#hero-quantity'),buttons=[...document.querySelectorAll('[data-direct-checkout]')],launchStatus=document.querySelector('#checkout-launch-status'),deviceKey='commera2-device-id';let deviceId=localStorage.getItem(deviceKey);if(!deviceId){deviceId=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);localStorage.setItem(deviceKey,deviceId)}document.querySelectorAll('[name="heroBundleId"]').forEach(option=>option.addEventListener('change',()=>{if(!option.checked)return;const chosen=Number(option.dataset.quantity||1);if(quantity){quantity.value=chosen;quantity.readOnly=Boolean(option.value)}const price=document.querySelector('#hero-price');if(price)price.textContent=FORMAT_MONEY(Number(option.dataset.price||${Number(product.pricePaise)}))}));buttons.forEach(button=>button.addEventListener('click',async event=>{event.preventDefault();if(button.dataset.loading==='true')return;if(launchStatus)launchStatus.textContent='';const selected=document.querySelector('[name="heroBundleId"]:checked'),payload={intent:'open',quantity:Number(selected?.dataset.quantity||quantity?.value||1),bundleId:selected?.value?Number(selected.value):null,visitorSessionId:window.commera2VisitorSessionId||null,checkoutToken:VISITOR_TOKEN,deviceId,analyticsConsentGranted:window.commera2AnalyticsConsent?.()??false,consentGranted:window.commera2TrackingConsent?window.commera2TrackingConsent():true,behavior:{timeOnPageMs:Math.round(performance.now()),source:'product_page'}};let nextWindow=null;if(!SAME_TAB)nextWindow=open('about:blank','_blank');buttons.forEach(item=>{item.dataset.loading='true';item.setAttribute('aria-disabled','true');item.dataset.label=item.textContent;item.textContent='Opening checkout…'});try{const response=await fetch('/api/public/'+encodeURIComponent(STORE)+'/'+encodeURIComponent(PAGE)+'/checkouts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),out=await response.json();if(!response.ok)throw Error(out.error||'Could not open checkout');const url='/s/'+encodeURIComponent(STORE)+'/checkout/'+encodeURIComponent(out.id);if(nextWindow)nextWindow.location=url;else location.assign(url)}catch(error){nextWindow?.close();buttons.forEach(item=>{item.dataset.loading='false';item.removeAttribute('aria-disabled');item.textContent=item.dataset.label||${scriptJson(String(content.ctaText || "Buy Now"))}});if(launchStatus)launchStatus.textContent=error.message||'Could not open checkout'}}))})();</script>`
-    : "";
+    ? `<script>(()=>{document.querySelectorAll('.imported-safe a[href="#buy"],.imported-safe a[href="#checkout"],.imported-safe a[class*="btn"],.imported-safe a[class*="cta"],.imported-safe button[class*="btn"],.imported-safe button[class*="cta"]').forEach(button=>button.dataset.directCheckout='true');const STORE=${scriptJson(page.storeSlug)},PAGE=${scriptJson(page.slug)},SAME_TAB=${sameTab},quantity=document.querySelector('#hero-quantity'),buttons=[...document.querySelectorAll('[data-direct-checkout]')],launchStatus=document.querySelector('#checkout-launch-status'),deviceKey='commera2-device-id';let deviceId=localStorage.getItem(deviceKey);if(!deviceId){deviceId=crypto.randomUUID?crypto.randomUUID():Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);localStorage.setItem(deviceKey,deviceId)}document.querySelectorAll('[name="heroBundleId"]').forEach(option=>option.addEventListener('change',()=>{if(!option.checked)return;const chosen=Number(option.dataset.quantity||1);if(quantity){quantity.value=chosen;quantity.readOnly=Boolean(option.value)}const price=document.querySelector('#hero-price');if(price)price.textContent=FORMAT_MONEY(Number(option.dataset.price||${Number(product.pricePaise)}))}));buttons.forEach(button=>button.addEventListener('click',async event=>{event.preventDefault();if(button.dataset.loading==='true')return;if(launchStatus)launchStatus.textContent='';const selected=document.querySelector('[name="heroBundleId"]:checked'),payload={intent:'open',quantity:Number(selected?.dataset.quantity||quantity?.value||1),bundleId:selected?.value?Number(selected.value):null,visitorSessionId:window.commera2VisitorSessionId||null,checkoutToken:VISITOR_TOKEN,deviceId,analyticsConsentGranted:window.commera2AnalyticsConsent?.()??false,consentGranted:window.commera2TrackingConsent?window.commera2TrackingConsent():true,behavior:{timeOnPageMs:Math.round(performance.now()),source:'product_page'}};let nextWindow=null;if(!SAME_TAB)nextWindow=open('about:blank','_blank');buttons.forEach(item=>{item.dataset.loading='true';item.setAttribute('aria-disabled','true');item.dataset.label=item.textContent;item.textContent='Opening checkout…'});try{const response=await fetch('/api/public/'+encodeURIComponent(STORE)+'/'+encodeURIComponent(PAGE)+'/checkouts',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify(payload)}),out=await response.json();if(!response.ok)throw Error(out.error||'Could not open checkout');const url='/s/'+encodeURIComponent(STORE)+'/checkout/'+encodeURIComponent(out.id);if(nextWindow)nextWindow.location=url;else location.assign(url)}catch(error){nextWindow?.close();buttons.forEach(item=>{item.dataset.loading='false';item.removeAttribute('aria-disabled');item.textContent=item.dataset.label||${scriptJson(String(content.ctaText || "Buy Now"))}});if(launchStatus)launchStatus.textContent=error.message||'Could not open checkout'}}))})();</script>`
+      : "";
   return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${title}</title>${branding?.favicon?.dataUrl ? `<link rel="icon" href="${branding.favicon.dataUrl}">` : ""}<link rel="stylesheet" href="/store.css"></head><body class="theme-${htmlEscape(template.key)}${site ? " store-site-shell" : ""}" style="${site?.style || ""}--page-bg:${htmlEscape(pageBackground)};--page-surface:${tokens.surface};--page-text:${htmlEscape(pageText)};--page-muted:${tokens.muted};--page-accent:${htmlEscape(pageAccent)};--page-accent-text:${tokens.accentText};--page-radius:${htmlEscape(pageRadius)};--page-font:${htmlEscape(pageFont)};--page-max-width:${htmlEscape(pageMaxWidth)}">
-  ${privacyBanner}${site ? site.announcement + site.header : ""}${!site && content.announcement ? `<div class="announcement">${htmlEscape(content.announcement)}</div>` : ""}<main class="landing">${site ? "" : storeHeader}<section class="landing-hero ${productGallery ? "" : "no-media"}">${productGallery}${heroProductInfo}</section>${imported}${storefrontDetails}<div class="section-grid">${sections}</div>${reviewSection}${site ? "" : policyFooter}
-  </main>${site?.footer || ""}
+  ${privacyBanner}${isImportedPage ? "" : site ? site.announcement + site.header : content.announcement ? `<div class="announcement">${htmlEscape(content.announcement)}</div>` : ""}<main class="landing${isImportedPage ? " imported-page" : ""}">${isImportedPage ? imported : `${site ? "" : storeHeader}<section class="landing-hero ${productGallery ? "" : "no-media"}">${productGallery}${heroProductInfo}</section>${storefrontDetails}<div class="section-grid">${sections}</div>${reviewSection}${site ? "" : policyFooter}`}
+  </main>${isImportedPage ? "" : site?.footer || ""}
   ${stickyMobile ? `<div class="sticky-mobile-buy"><strong>${money(product.pricePaise)}</strong><a href="${checkoutHref}" class="hero-cta" ${directCheckout ? 'data-direct-checkout="true"' : ""}>${ctaText}</a></div>` : ""}
   ${pixelScripts(pixels, page.storeId, page.slug, { privacy })}<script>const STORE='${store}',PAGE='${slug}',STORE_ID=${product.storeId},CURRENCY='${htmlEscape(currency)}',FORMAT_MONEY=value=>new Intl.NumberFormat(undefined,{style:'currency',currency:CURRENCY,maximumFractionDigits:2}).format(Number(value||0)/100);window.commera2ProductId=${Number(product.id)};window.commera2PageId=${Number(page.id)};if(window.trackCommerceEvent){trackCommerceEvent('page_view',{pageId:${Number(page.id)}});trackCommerceEvent('product_view',{productId:${Number(product.id)},pageId:${Number(page.id)},quantity:1,productPrice:${Number(product.pricePaise) / 100},currency:CURRENCY});}const reviewForm=document.querySelector('#review-form'),reviewStatus=document.querySelector('#review-status'),reviewFiles=reviewForm?.querySelector('[name="images"]'),reviewPreview=document.querySelector('#review-image-preview'),reviewSubmit=reviewForm?.querySelector('[type="submit"]');let reviewSubmitting=false;const filePayload=file=>new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve({name:file.name,type:file.type,data:String(reader.result).split(',')[1]});reader.onerror=()=>reject(Error('Could not read review image'));reader.readAsDataURL(file)});if(reviewFiles)reviewFiles.addEventListener('change',()=>{reviewPreview.innerHTML='';for(const file of [...reviewFiles.files].slice(0,5)){const image=document.createElement('img');image.src=URL.createObjectURL(file);image.alt='Selected review image';reviewPreview.appendChild(image)}});if(reviewForm)reviewForm.addEventListener('submit',async event=>{event.preventDefault();if(reviewSubmitting)return;reviewSubmitting=true;reviewSubmit.disabled=true;reviewStatus.textContent='';try{const files=[...reviewFiles.files];if(files.length>5)throw Error('A review can have at most 5 images');if(files.some(file=>file.size>1024*1024))throw Error('Each review image must be 1 MB or smaller');const values=Object.fromEntries(new FormData(reviewForm));values.rating=Number(values.rating);const images=await Promise.all(files.map(filePayload));const response=await fetch('/api/public/stores/'+STORE_ID+'/products/${Number(product.id)}/reviews',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({...values,images})}),out=await response.json();if(!response.ok)throw Error(out.error);reviewForm.reset();reviewPreview.innerHTML='';reviewForm.hidden=true;document.querySelector('#open-review-form')?.focus({preventScroll:true});}catch(error){reviewStatus.textContent=error.message;}finally{reviewSubmitting=false;reviewSubmit.disabled=false;}});</script>${customerExperienceScript}${directCheckoutScript}${exitOfferExperience({ offer: exitOffer, storeId: page.storeId, storeSlug: page.storeSlug, pageId: page.id, pageSlug: page.slug, productId: product.id, currency, context: "product_page" })}</body></html>`;
 }
@@ -1044,6 +1054,8 @@ export function createApp({
   challengeProvider,
   merchantAuth = !db.__commera2TestDatabase,
   authOptions = {},
+  googleAuthProvider,
+  oauthStateSecret,
 } = {}) {
   const settingsService = new SettingsService(db);
   const shipping = new ShippingService(db);
@@ -1097,6 +1109,45 @@ export function createApp({
     secret: otpSecret,
   });
   const auth = new AuthService(db, authOptions);
+  const googleAuth =
+      googleAuthProvider === undefined
+        ? createGoogleAuthProvider()
+        : googleAuthProvider,
+    googleStateSecret =
+      String(
+        oauthStateSecret ||
+          process.env.AUTH_OAUTH_STATE_SECRET ||
+          process.env.GOOGLE_CLIENT_SECRET ||
+          "",
+      ) || randomBytes(32).toString("hex"),
+    signGoogleState = (details) => {
+      const payload = Buffer.from(JSON.stringify(details)).toString("base64url"),
+        signature = createHmac("sha256", googleStateSecret)
+          .update(payload)
+          .digest("base64url");
+      return `${payload}.${signature}`;
+    },
+    readGoogleState = (token) => {
+      const [payload, provided] = String(token || "").split("."),
+        expected = createHmac("sha256", googleStateSecret)
+          .update(payload || "")
+          .digest("base64url");
+      if (
+        !provided ||
+        provided.length !== expected.length ||
+        !timingSafeEqual(Buffer.from(provided), Buffer.from(expected))
+      )
+        throw Error("Google sign-in session is invalid or expired");
+      let details;
+      try {
+        details = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+      } catch {
+        throw Error("Google sign-in session is invalid or expired");
+      }
+      if (!details.expiresAt || Number(details.expiresAt) <= Date.now())
+        throw Error("Google sign-in session is invalid or expired");
+      return details;
+    };
   const botProtection = new BotProtectionService(db, {
     ipReputationProvider,
     challengeProvider,
@@ -1176,6 +1227,77 @@ export function createApp({
           user,
           csrfToken: session.csrfToken,
         });
+      }
+      if (path === "/api/auth/google/status" && req.method === "GET")
+        return json(res, 200, { enabled: Boolean(merchantAuth && googleAuth) });
+      if (path === "/api/auth/google" && req.method === "GET") {
+        if (!merchantAuth || !googleAuth)
+          return json(res, 503, { error: "Google sign-in is not configured" });
+        const state = randomBytes(32).toString("base64url"),
+          nonce = randomBytes(32).toString("base64url"),
+          returnTo = safeReturnPath(url.searchParams.get("returnTo")),
+          started = await googleAuth.begin({ state, nonce });
+        res.setHeader(
+          "set-cookie",
+          googleOAuthCookie(
+            signGoogleState({
+              state,
+              nonce,
+              codeVerifier: started.codeVerifier,
+              returnTo,
+              expiresAt: Date.now() + 10 * 60_000,
+            }),
+          ),
+        );
+        res.writeHead(302, {
+          location: started.authorizationUrl,
+          "cache-control": "no-store",
+        });
+        return res.end();
+      }
+      if (path === "/api/auth/google/callback" && req.method === "GET") {
+        const clearGoogleCookie = googleOAuthCookie("", 0),
+          fail = (message) => {
+            res.setHeader("set-cookie", clearGoogleCookie);
+            res.writeHead(302, {
+              location: `/?authError=${encodeURIComponent(message)}`,
+              "cache-control": "no-store",
+            });
+            return res.end();
+          };
+        if (!merchantAuth || !googleAuth)
+          return fail("Google sign-in is not configured");
+        if (url.searchParams.get("error"))
+          return fail("Google sign-in was cancelled");
+        try {
+          const pending = readGoogleState(cookies(req).commera2_google_oauth),
+            returnedState = String(url.searchParams.get("state") || ""),
+            code = String(url.searchParams.get("code") || "");
+          if (!returnedState || returnedState !== pending.state || !code)
+            throw Error("Google sign-in session is invalid or expired");
+          const profile = await googleAuth.complete({
+              code,
+              codeVerifier: pending.codeVerifier,
+              nonce: pending.nonce,
+            }),
+            user = auth.loginWithGoogle(profile),
+            session = auth.createSession(user.id);
+          res.setHeader("set-cookie", [
+            merchantSessionCookie(session.token, session.expiresAt),
+            clearGoogleCookie,
+          ]);
+          res.writeHead(302, {
+            location: safeReturnPath(pending.returnTo),
+            "cache-control": "no-store",
+          });
+          return res.end();
+        } catch (error) {
+          if (!/invalid or expired/i.test(String(error?.message || "")))
+            console.error("Google sign-in failed", {
+              message: String(error?.message || "Unknown error"),
+            });
+          return fail("Google sign-in could not be completed. Please try again");
+        }
       }
       if (path === "/api/auth/login" && req.method === "POST") {
         if (!merchantAuth)

@@ -14,6 +14,8 @@ const publicUser = (value) => ({
   id: value.id,
   email: value.email,
   displayName: value.display_name,
+  picture: value.picture_url || "",
+  googleConnected: Boolean(value.google_subject),
 });
 
 function passwordHash(password) {
@@ -101,6 +103,70 @@ export class AuthService {
     if (!user || !validPassword)
       throw Error("Email or password is incorrect");
     return publicUser(user);
+  }
+
+  loginWithGoogle(input) {
+    const subject = clean(input.subject),
+      email = normalizeEmail(input.email),
+      displayName = clean(input.displayName).replace(/\s+/g, " "),
+      picture = /^https:\/\//i.test(clean(input.picture)) ? clean(input.picture) : "";
+    if (!subject || subject.length > 255)
+      throw Error("Google account identifier is invalid");
+    if (!input.emailVerified || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email))
+      throw Error("Google did not provide a verified email address");
+    if (displayName.length < 2 || displayName.length > 100)
+      throw Error("Google account name is invalid");
+
+    const bySubject = this.db
+        .prepare("SELECT * FROM merchant_users WHERE google_subject=?")
+        .get(subject),
+      byEmail = this.db
+        .prepare("SELECT * FROM merchant_users WHERE email=?")
+        .get(email),
+      existing = bySubject || byEmail;
+    if (bySubject && byEmail && bySubject.id !== byEmail.id)
+      throw Error("This Google account conflicts with an existing account");
+    if (existing && !existing.active) throw Error("Account is disabled");
+
+    if (existing) {
+      if (existing.google_subject && existing.google_subject !== subject)
+        throw Error("This email is already linked to another Google account");
+      this.db
+        .prepare(
+          `UPDATE merchant_users SET google_subject=?,display_name=?,picture_url=?,updated_at=CURRENT_TIMESTAMP
+           WHERE id=?`,
+        )
+        .run(subject, displayName, picture, existing.id);
+      return publicUser(this.getUser(existing.id));
+    }
+
+    const id = randomUUID(),
+      firstUser =
+        Number(this.db.prepare("SELECT COUNT(*) count FROM merchant_users").get().count) ===
+        0;
+    this.db.exec("BEGIN IMMEDIATE");
+    try {
+      this.db
+        .prepare(
+          `INSERT INTO merchant_users
+           (id,email,display_name,password_hash,google_subject,picture_url)
+           VALUES (?,?,?,?,?,?)`,
+        )
+        .run(id, email, displayName, "", subject, picture);
+      if (firstUser)
+        this.db
+          .prepare(
+            `INSERT INTO store_memberships (user_id,store_id,role)
+             SELECT ?,s.id,'owner' FROM stores s
+             WHERE NOT EXISTS (SELECT 1 FROM store_memberships sm WHERE sm.store_id=s.id)`,
+          )
+          .run(id);
+      this.db.exec("COMMIT");
+      return publicUser(this.getUser(id));
+    } catch (error) {
+      this.db.exec("ROLLBACK");
+      throw error;
+    }
   }
 
   getUser(id) {
