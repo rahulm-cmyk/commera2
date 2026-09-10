@@ -35,7 +35,7 @@ test('live store links select the active primary domain while draft preview stay
   assert.equal(storeUrl('products/test'), 'https://shop.example/products/test');
   assert.match(html, /href="https:\/\/shop.example"[^>]*>View your store/);
   assert.match(html, /href="https:\/\/shop.example"[^>]*>View live store/);
-  assert.match(html, /href="\/api\/stores\/7\/storefront\/preview"[^>]*>Preview saved draft/);
+  assert.match(html, /href="\/api\/stores\/7\/storefront\/preview\/open"[^>]*>Preview saved draft/);
   assert.doesNotMatch(html, /href="\/s\/test-store"/);
   assert.match(source, /renderOnlineStore\(\{root:content,route,data,storeId,api,esc,storeUrl,/);
 });

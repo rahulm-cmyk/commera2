@@ -20,6 +20,7 @@ import { ReviewImportService } from "./review-import-service.js";
 import { PolicyService } from "./policy-service.js";
 import { StorefrontService } from "./storefront-service.js";
 import { OnlineStoreService } from './online-store-service.js';
+import { createStorePreviewTokens } from './store-preview-token.js';
 import { renderStoreChrome } from "./store-site-layout.js";
 import { LiveVisitorService } from "./live-visitor-service.js";
 import { analyticsAllowed } from './tracking-consent.js';
@@ -1111,6 +1112,7 @@ export function createApp({
     secret: otpSecret,
   });
   const auth = new AuthService(db, authOptions);
+  const storePreviewTokens = createStorePreviewTokens({ secret: process.env.PREVIEW_TOKEN_SECRET || undefined });
   const googleAuth =
       googleAuthProvider === undefined
         ? createGoogleAuthProvider()
@@ -1170,6 +1172,23 @@ export function createApp({
     const path = url.pathname;
     try {
       const resolvedDomain = domains.resolveHost(req.headers.host || "");
+      if (path === '/_preview/store') {
+        res.setHeader('cache-control', 'private, no-store');
+        res.setHeader('referrer-policy', 'no-referrer');
+        res.setHeader('x-robots-tag', 'noindex, nofollow, noarchive');
+        if (req.method !== 'GET' || !resolvedDomain ||
+            !storePreviewTokens.verify(url.searchParams.get('token'), resolvedDomain.storeId, resolvedDomain.hostname)) {
+          res.writeHead(403, { 'content-type': 'text/html; charset=utf-8' });
+          return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preview unavailable</title></head><body><h1>This preview link has expired or is invalid</h1><p>Open Preview saved draft again from your merchant workspace.</p></body></html>');
+        }
+        const html = storefrontHomePage({
+          storefront: storefront.get(resolvedDomain.storeId),
+          preferences: onlineStore.preferences(resolvedDomain.storeId),
+          writtenPolicies: policies.listPublished(resolvedDomain.storeId),
+        });
+        res.writeHead(200, { 'content-type': 'text/html; charset=utf-8' });
+        return res.end(customDomainHtml(html, resolvedDomain.storeSlug));
+      }
       if (
         !resolvedDomain &&
         domains.isDisconnectedHost(req.headers.host || "") &&
@@ -1557,6 +1576,16 @@ export function createApp({
       match = path.match(/^\/api\/stores\/(\d+)\/storefront$/);
       if (match && req.method === "GET")
         return json(res, 200, storefront.get(Number(match[1])));
+      match = path.match(/^\/api\/stores\/(\d+)\/storefront\/preview\/open$/);
+      if (match && req.method === 'GET') {
+        const store = service.getStore(Number(match[1])),
+          domain = domains.activeDomainForStoreSlug(store.slug);
+        const destination = domain?.openUrl
+          ? `${domain.openUrl.replace(/\/+$/, '')}/_preview/store?token=${storePreviewTokens.issue(store.id, domain.domainName)}`
+          : `/api/stores/${store.id}/storefront/preview`;
+        res.writeHead(303, { location: destination, 'cache-control': 'private, no-store', 'referrer-policy': 'no-referrer' });
+        return res.end();
+      }
       match = path.match(/^\/api\/stores\/(\d+)\/storefront\/preview$/);
       if (match && req.method === "GET") {
         const id = Number(match[1]);
