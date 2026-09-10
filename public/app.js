@@ -836,7 +836,7 @@ async function onlineStoreView(route) {
   try {
     const module=await import('/online-store.js');
     if (location.pathname!==route.path) return;
-    await module.renderOnlineStore({root:content,route,data,storeId,api,esc,navigate:navigateTo,toast,
+    await module.renderOnlineStore({root:content,route,data,storeId,api,esc,storeUrl,navigate:navigateTo,toast,
       setDirty:(dirty,save)=>{productPageDirty=dirty;productPageSaveHandler=save;}});
   } catch(error) { if(location.pathname===route.path) content.innerHTML=`<section class="panel" role="alert">${esc(error.message)}</section>`; }
 }
