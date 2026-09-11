@@ -415,6 +415,58 @@ test("required storefront media and featured product constraints block incomplet
   assert.match(r.body.error, /HTTPS, HTTP, or a store-relative path/i);
 });
 
+test("homepage editor persists section visibility, ordering, and safe custom CSS", async (t) => {
+  const app = createApp({ db: createDatabase(":memory:"), port: 0 });
+  await app.start();
+  t.after(() => app.stop());
+  const base = `http://127.0.0.1:${app.port}`,
+    main = await setup(base, "theme-editor-state"),
+    path = `/api/stores/${main.store.id}/storefront`;
+
+  await call(base, `${path}/branding`, "PATCH", { logo: png });
+  await call(base, `${path}/products/${main.product.id}`, "PATCH", {
+    mainImage: png,
+    description: "<p>Published product.</p>",
+    publish: true,
+  });
+  let r = await call(base, `${path}/home`, "PATCH", {
+    bannerVisible: false,
+    featuredVisible: true,
+    sectionOrder: ["featured", "banner"],
+    customCss: ".store-home-products { background: #f7faf9; }",
+    featuredProductIds: [main.product.id],
+  });
+  assert.equal(r.response.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.bannerVisible, false);
+  assert.equal(r.body.featuredVisible, true);
+  assert.deepEqual(r.body.sectionOrder, ["featured", "banner"]);
+  assert.match(r.body.customCss, /store-home-products/);
+
+  r = await call(base, `${path}/home/publish`, "POST", {});
+  assert.equal(r.response.status, 200, JSON.stringify(r.body));
+  r = await call(base, `/s/${main.store.slug}`);
+  assert.equal(r.response.status, 200);
+  assert.match(r.body, /id="commera-theme-custom-style"/);
+  assert.match(r.body, /data-store-editor-section="banner" hidden/);
+  assert.ok(r.body.indexOf('data-store-editor-section="featured"') < r.body.indexOf('data-store-editor-section="banner"'));
+
+  r = await call(base, `${path}/home`, "PATCH", {
+    bannerVisible: false,
+    featuredVisible: false,
+  });
+  assert.equal(r.response.status, 200);
+  r = await call(base, `${path}/home/publish`, "POST", {});
+  assert.equal(r.response.status, 400);
+  assert.match(r.body.error, /at least one homepage section/i);
+
+  r = await call(base, `${path}/home`, "PATCH", { customCss: '@import url("https://example.com/theme.css");' });
+  assert.equal(r.response.status, 400);
+  assert.match(r.body.error, /cannot load external files/i);
+  r = await call(base, `${path}/home`, "PATCH", { sectionOrder: ["banner", "banner"] });
+  assert.equal(r.response.status, 400);
+  assert.match(r.body.error, /section order is invalid/i);
+});
+
 test("universal page uses store currency and never publishes invented media, bundles, or social proof", async (t) => {
   const app = createApp({ db: createDatabase(":memory:"), port: 0 });
   await app.start();

@@ -44,6 +44,21 @@ const navigationLinks = (value) => {
     return { label, url: publicUrl(item?.url, { optional: false }) };
   });
 };
+const homeSectionTypes = ["banner", "featured"];
+const homeSectionOrder = (value) => {
+  if (!Array.isArray(value)) throw Error("Homepage section order must be a list");
+  const order = value.map((item) => clean(item));
+  if (order.length !== homeSectionTypes.length || new Set(order).size !== homeSectionTypes.length || order.some((item) => !homeSectionTypes.includes(item)))
+    throw Error("Homepage section order is invalid");
+  return order;
+};
+export const safeThemeCss = (value) => {
+  const css = String(value ?? "").trim();
+  if (Buffer.byteLength(css) > 100_000) throw Error("Theme CSS must be 100 KB or smaller");
+  if (/<\/?style\b|@import\b|(?:url|image-set)\s*\(|expression\s*\(|behavior\s*:|-moz-binding\s*:/i.test(css))
+    throw Error("Theme CSS cannot load external files or contain script-like rules");
+  return css;
+};
 
 const toBase64 = (value) =>
   String(value ?? "")
@@ -403,6 +418,10 @@ export class StorefrontService {
           contact: settings.footerContact,
           showProducts: Boolean(settings.footerShowProducts),
         },
+        bannerVisible: Boolean(settings.bannerVisible),
+        featuredVisible: Boolean(settings.featuredVisible),
+        sectionOrder: homeSectionOrder(parseJson(settings.homeSectionOrderJson, homeSectionTypes)),
+        customCss: settings.customCss || "",
         sectionHeading: settings.sectionHeading,
         status: settings.status,
         featuredProducts: featured,
@@ -876,7 +895,11 @@ export class StorefrontService {
       footerContact = clean(input.footerContact ?? current.footerContact),
       footerShowProducts = Boolean(
         input.footerShowProducts ?? current.footerShowProducts,
-      );
+      ),
+      bannerVisible = Boolean(input.bannerVisible ?? current.bannerVisible),
+      featuredVisible = Boolean(input.featuredVisible ?? current.featuredVisible),
+      sectionOrder = homeSectionOrder(input.sectionOrder ?? parseJson(current.homeSectionOrderJson, homeSectionTypes)),
+      customCss = safeThemeCss(input.customCss ?? current.customCss);
     if (footerContact.length > 500)
       throw Error("Footer contact information must be 500 characters or fewer");
 
@@ -902,6 +925,7 @@ export class StorefrontService {
           announcement_background=?, announcement_text_color=?,
           header_links_json=?, header_sticky=?,
           footer_contact=?, footer_show_products=?,
+          banner_visible=?, featured_visible=?, home_section_order_json=?, custom_css=?,
           section_heading=?,
           status='draft',
           published_at=NULL,
@@ -935,6 +959,10 @@ export class StorefrontService {
           headerSticky ? 1 : 0,
           footerContact,
           footerShowProducts ? 1 : 0,
+          bannerVisible ? 1 : 0,
+          featuredVisible ? 1 : 0,
+          JSON.stringify(sectionOrder),
+          customCss,
           clean(input.sectionHeading ?? current.sectionHeading),
           storeId,
         );
@@ -958,11 +986,14 @@ export class StorefrontService {
     const model = this.get(storeId);
     if (!model.logo?.dataUrl)
       throw Error("Store Logo is required before publishing");
-    if (!model.home.banner?.dataUrl)
+    const visibleSections = model.home.sectionOrder.filter((section) => section === "banner" ? model.home.bannerVisible : model.home.featuredVisible);
+    if (!visibleSections.length)
+      throw Error("Show at least one homepage section before publishing. Your draft is saved.");
+    if (model.home.bannerVisible && !model.home.banner?.dataUrl)
       throw Error("Banner Image is required before publishing");
-    if (!model.home.featuredProducts.length)
+    if (model.home.featuredVisible && !model.home.featuredProducts.length)
       throw Error("Select at least one product for the homepage");
-    const unavailable = model.home.featuredProducts.filter(item => item.productPageStatus !== "published");
+    const unavailable = model.home.featuredVisible ? model.home.featuredProducts.filter(item => item.productPageStatus !== "published") : [];
     if (unavailable.length)
       throw Error(`Cannot publish store: ${unavailable.map(item => item.name).join(', ')} must be active and connected to a published Product Page. Your draft is saved.`);
     const settings = row(this.#settings(storeId));
@@ -970,7 +1001,7 @@ export class StorefrontService {
       throw Error("Announcement Message is required when enabled. Your draft is saved.");
     if (settings.announcementLinkText && !settings.announcementLinkUrl)
       throw Error("Announcement Link is required when link text is set. Your draft is saved.");
-    if (settings.buttonText) {
+    if (model.home.bannerVisible && settings.buttonText) {
       if (settings.buttonTargetType === 'product') {
         const product = settings.buttonTargetId && this.getProduct(storeId, settings.buttonTargetId);
         if (!product || product.status !== 'published' || product.pageStatus !== 'published' || product.active === 0)

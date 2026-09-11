@@ -113,6 +113,10 @@ export function createDatabase(filename = "data/commera2.sqlite") {
           IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_schema='public' AND table_name='product_pages' AND column_name='deleted_at') THEN
             EXECUTE 'ALTER TABLE product_pages ADD COLUMN deleted_at TEXT';
           END IF;
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS banner_visible INTEGER NOT NULL DEFAULT 1;
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS featured_visible INTEGER NOT NULL DEFAULT 1;
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS home_section_order_json TEXT NOT NULL DEFAULT '["banner","featured"]';
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS custom_css TEXT NOT NULL DEFAULT '';
         END $$`);
       db.exec(`
         CREATE TABLE IF NOT EXISTS live_visitor_sessions (
@@ -804,6 +808,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       announcement_background TEXT NOT NULL DEFAULT '#0f5132', announcement_text_color TEXT NOT NULL DEFAULT '#ffffff',
       header_links_json TEXT NOT NULL DEFAULT '[]', header_sticky INTEGER NOT NULL DEFAULT 1,
       footer_contact TEXT NOT NULL DEFAULT '', footer_show_products INTEGER NOT NULL DEFAULT 1,
+      banner_visible INTEGER NOT NULL DEFAULT 1, featured_visible INTEGER NOT NULL DEFAULT 1,
+      home_section_order_json TEXT NOT NULL DEFAULT '["banner","featured"]', custom_css TEXT NOT NULL DEFAULT '',
       section_heading TEXT NOT NULL DEFAULT 'Featured Products', status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, published_at TEXT
     );
@@ -1159,6 +1165,10 @@ export function createDatabase(filename = "data/commera2.sqlite") {
     ["header_sticky", "ALTER TABLE storefront_settings ADD COLUMN header_sticky INTEGER NOT NULL DEFAULT 1"],
     ["footer_contact", "ALTER TABLE storefront_settings ADD COLUMN footer_contact TEXT NOT NULL DEFAULT ''"],
     ["footer_show_products", "ALTER TABLE storefront_settings ADD COLUMN footer_show_products INTEGER NOT NULL DEFAULT 1"],
+    ["banner_visible", "ALTER TABLE storefront_settings ADD COLUMN banner_visible INTEGER NOT NULL DEFAULT 1"],
+    ["featured_visible", "ALTER TABLE storefront_settings ADD COLUMN featured_visible INTEGER NOT NULL DEFAULT 1"],
+    ["home_section_order_json", "ALTER TABLE storefront_settings ADD COLUMN home_section_order_json TEXT NOT NULL DEFAULT '[\"banner\",\"featured\"]'"],
+    ["custom_css", "ALTER TABLE storefront_settings ADD COLUMN custom_css TEXT NOT NULL DEFAULT ''"],
   ];
   for (const [column, sql] of storefrontMigrations)
     if (!storefrontColumns.has(column)) db.exec(sql);

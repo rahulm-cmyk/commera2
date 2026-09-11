@@ -28,9 +28,9 @@ export function renderStoreChrome(model, policies = [], options = {}) {
   ).join("");
   const message = home.announcement;
   const announcement = message?.enabled
-    ? `<aside class="store-announcement" style="--announcement-bg:${escape(message.backgroundColor)};--announcement-text:${escape(message.textColor)}"><span>${escape(message.message)}</span>${message.linkText && message.linkUrl ? `<a href="${escape(storeLink(message.linkUrl, store.slug))}">${escape(message.linkText)}</a>` : ""}</aside>`
+    ? `<aside class="store-announcement" data-store-editor-section="announcement" style="--announcement-bg:${escape(message.backgroundColor)};--announcement-text:${escape(message.textColor)}"><span>${escape(message.message)}</span>${message.linkText && message.linkUrl ? `<a href="${escape(storeLink(message.linkUrl, store.slug))}">${escape(message.linkText)}</a>` : ""}</aside>`
     : "";
-  const header = `<header class="store-site-header${home.header?.sticky ? " is-sticky" : ""}"><a class="store-site-brand" href="${homeHref}">${options.logoHtml || logo}</a><nav aria-label="Store navigation">${navigation}</nav><details class="store-mobile-menu"><summary aria-label="Open store menu">Menu</summary><nav aria-label="Mobile store navigation">${navigation}</nav></details></header>`;
+  const header = `<header class="store-site-header${home.header?.sticky ? " is-sticky" : ""}" data-store-editor-section="header"><a class="store-site-brand" href="${homeHref}">${options.logoHtml || logo}</a><nav aria-label="Store navigation">${navigation}</nav><details class="store-mobile-menu"><summary aria-label="Open store menu">Menu</summary><nav aria-label="Mobile store navigation">${navigation}</nav></details></header>`;
   const products = home.footer?.showProducts
     ? (home.featuredProducts || []).filter((product) => product.active !== 0 && product.productPageStatus === "published")
       .map((product) => `<a href="${homeHref}/products/${encodeURIComponent(product.slug)}">${escape(product.name)}</a>`).join("")
@@ -38,7 +38,7 @@ export function renderStoreChrome(model, policies = [], options = {}) {
   const policyLinks = policies.map((policy) =>
     `<a href="${homeHref}/policies/${encodeURIComponent(policy.type)}">${escape(policy.label || policy.title || policy.type)}</a>`
   ).join("");
-  const footer = `<footer class="store-policy-footer" id="policies"><div id="contact"><a class="store-site-brand" href="${homeHref}">${logo}</a>${home.footer?.contact ? `<p>${escape(home.footer.contact)}</p>` : ""}</div>${products ? `<nav aria-label="Products"><strong>Products</strong>${products}</nav>` : ""}${policyLinks ? `<nav aria-label="Policies"><strong>Policies</strong>${policyLinks}</nav>` : ""}<small>© ${new Date().getUTCFullYear()} ${escape(store.name)}</small></footer>`;
+  const footer = `<footer class="store-policy-footer" id="policies" data-store-editor-section="footer"><div id="contact"><a class="store-site-brand" href="${homeHref}">${logo}</a>${home.footer?.contact ? `<p>${escape(home.footer.contact)}</p>` : ""}</div>${products ? `<nav aria-label="Products"><strong>Products</strong>${products}</nav>` : ""}${policyLinks ? `<nav aria-label="Policies"><strong>Policies</strong>${policyLinks}</nav>` : ""}<small>© ${new Date().getUTCFullYear()} ${escape(store.name)}</small></footer>`;
   const style = `--store-primary:${escape(branding.primaryColor || "#0f5132")};--store-secondary:${escape(branding.secondaryColor || "#f4efe5")};--store-heading-font:${escape(branding.headingFont || "Inter")};--store-body-font:${escape(branding.bodyFont || "Inter")};`;
   const favicon = model.favicon?.dataUrl ? `<link rel="icon" href="${escape(model.favicon.dataUrl)}">` : "";
   return {

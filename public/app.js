@@ -758,6 +758,7 @@ function render() {
   storePreviewResizeObserver?.disconnect();
   storePreviewResizeObserver = null;
   document.body.classList.remove("visual-builder-open");
+  document.body.classList.remove("online-theme-editor-open");
   content.classList.remove('online-theme-editor', 'live-visitors-workspace');
   const route = routeFromPath();
   if (
@@ -836,11 +837,9 @@ let storeEditorSection = "banner";
 let storePreviewResizeObserver = null;
 async function onlineStoreView(route) {
   if (route.onlineTab==='themes' && route.onlineScreen==='current/edit') {
-    storeView();
+    storeView({ themeEditor: true });
     content.classList.add('online-theme-editor');
-    setPageHeader('Customize your website. Save a draft to preview changes, then publish when you’re ready.', '<div id="store-editor-top-actions"><button type="button" class="secondary" id="back-online-themes">← Themes</button></div>');
-    $('#store-editor-top-actions').append($('[data-store-save-all]'), $('#publish-store-home'));
-    $('#back-online-themes').onclick=()=>navigateTo('/online-store/themes');
+    document.body.classList.add('online-theme-editor-open');
     return;
   }
   content.innerHTML='<section class="panel" role="status">Loading Online Store…</section>';
@@ -892,7 +891,7 @@ function setupStoreEditorControls(form) {
   };
   update();
   const file = form.elements.bannerImage;
-  file.addEventListener('change', () => {
+  file.onchange = () => {
     const selected = file.files[0];
     if (!selected) return;
     form.querySelector('#store-banner-file-name').textContent = selected.name;
@@ -902,11 +901,13 @@ function setupStoreEditorControls(form) {
       const preview = form.querySelector('#store-banner-image-preview');
       preview.src = reader.result; preview.hidden = false;
       form.querySelector('#store-banner-placeholder').hidden = true;
+      form.dispatchEvent(new CustomEvent('store-preview-image', { bubbles: true }));
     };
     reader.readAsDataURL(selected);
-  });
+  };
 }
 function storeView() {
+  const { themeEditor = false } = arguments[0] || {};
   const storefront = data.storefront || {},
     branding = storefront.branding || {},
     home = storefront.home || {},
@@ -969,9 +970,11 @@ function storeView() {
       <div class="panel-head"><div><h2>Home Page</h2><span>Announcement, navigation, banner, featured products, and footer.</span></div></div>
       <fieldset class="store-editor-fieldset"><legend>Announcement Bar</legend><label class="toggle-row"><span><strong>Enable announcement</strong><small>Show a store-wide message above the header.</small></span><input name="announcementEnabled" type="checkbox" ${announcement.enabled ? "checked" : ""}></label><label class="field">Message<input name="announcementMessage" value="${esc(announcement.message || "")}" placeholder="Free delivery on prepaid and COD orders"></label><div class="form-columns"><label class="field">Link Text<input name="announcementLinkText" value="${esc(announcement.linkText || "")}" placeholder="Shop now"></label><label class="field">Link Destination<input name="announcementLinkUrl" value="${esc(announcement.linkUrl || "")}" placeholder="/s/${esc(data.store.slug)}#products"></label></div><div class="form-columns"><label class="field">Background<input name="announcementBackground" type="color" value="${esc(announcement.backgroundColor || "#0f5132")}"></label><label class="field">Text Color<input name="announcementTextColor" type="color" value="${esc(announcement.textColor || "#ffffff")}"></label></div></fieldset>
       <fieldset class="store-editor-fieldset"><legend>Header</legend><label class="toggle-row store-sticky-control"><span><strong>Sticky header</strong><small>Keep your menu in reach as customers scroll.</small></span><input name="headerSticky" type="checkbox" role="switch" ${header.sticky ? "checked" : ""}></label><div class="store-field-group-title"><strong>Navigation links</strong><small>Give each link a name and choose where it goes.</small></div><div id="store-menu-links">${(header.links || []).map(link => storeMenuRow(link)).join("")}</div><p class="store-menu-empty" id="store-menu-empty">Your store uses its default navigation. Add a link to create a custom menu.</p><button type="button" class="secondary store-add-link" id="store-menu-add">+ Add menu link</button><small class="store-field-hint">Up to 8 links. Use the arrows to change their order.</small></fieldset>
-      <fieldset class="store-editor-fieldset"><legend>Banner</legend><div class="store-banner-media"><div class="store-field-group-title"><strong>Banner image</strong><small>The first image customers see on your homepage.</small></div><div class="store-banner-image"><img id="store-banner-image-preview" src="${esc(home.banner?.dataUrl || "")}" alt="Current homepage banner" ${home.banner?.dataUrl ? "" : "hidden"}><span id="store-banner-placeholder" ${home.banner?.dataUrl ? "hidden" : ""}>Add your homepage image</span></div><label class="field store-media-upload">Choose banner image<input name="bannerImage" type="file" accept="image/png,image/jpeg,image/webp"><small id="store-banner-file-name">${home.banner?.dataUrl ? "Current banner saved · choose an image to replace it" : "PNG, JPG or WebP · required before publishing"}</small></label></div><div class="store-field-group-title"><strong>Content & call to action</strong><small>Keep your message short and give shoppers a clear next step.</small></div><label class="field">Heading<input name="bannerHeading" value="${esc(home.heading || "")}" placeholder="A better daily ritual"></label><label class="field">Subheading<textarea name="bannerSubheading" rows="3">${esc(home.subheading || "")}</textarea></label><div class="form-columns"><label class="field">Button Text<input name="buttonText" value="${esc(home.buttonText || "")}" placeholder="Shop Now"></label><label class="field">Button Action<select name="buttonTargetType"><option value="product" ${targetType === "product" ? "selected" : ""}>Open Product</option><option value="page" ${targetType === "page" ? "selected" : ""}>Open Product Page</option><option value="url" ${targetType === "url" ? "selected" : ""}>Redirect to URL</option></select></label></div><label class="field" data-store-target="product">Product<select name="buttonProductId">${targetOptions(data.products, home.buttonTarget?.id, (item) => item.name)}</select></label><label class="field" data-store-target="page">Product Page<select name="buttonPageId">${targetOptions(data.pages, home.buttonTarget?.id, (item) => item.title)}</select></label><label class="field" data-store-target="url">URL<input name="buttonTargetUrl" value="${esc(targetType === "url" ? home.buttonTargetUrl || home.buttonTarget?.url || "" : "")}" placeholder="https://example.com or /store-path"></label></fieldset>
-      <fieldset class="store-editor-fieldset"><legend>Featured Products</legend><label class="field">Section Heading<input name="sectionHeading" value="${esc(home.sectionHeading || "Featured Products")}"></label><div class="store-product-choices">${products || "<p>Create a product before configuring the homepage.</p>"}</div></fieldset>
+      <fieldset class="store-editor-fieldset"><legend>Banner</legend><label class="toggle-row store-section-visibility"><span><strong>Show banner</strong><small>Display this section on the homepage.</small></span><input name="bannerVisible" type="checkbox" role="switch" ${home.bannerVisible !== false ? "checked" : ""}></label><div class="store-banner-media"><div class="store-field-group-title"><strong>Banner image</strong><small>The first image customers see on your homepage.</small></div><div class="store-banner-image"><img id="store-banner-image-preview" src="${esc(home.banner?.dataUrl || "")}" alt="Current homepage banner" ${home.banner?.dataUrl ? "" : "hidden"}><span id="store-banner-placeholder" ${home.banner?.dataUrl ? "hidden" : ""}>Add your homepage image</span></div><label class="field store-media-upload">Choose banner image<input name="bannerImage" type="file" accept="image/png,image/jpeg,image/webp"><small id="store-banner-file-name">${home.banner?.dataUrl ? "Current banner saved · choose an image to replace it" : "PNG, JPG or WebP · required before publishing"}</small></label></div><div class="store-field-group-title"><strong>Content and action</strong><small>Keep your message short and give shoppers a clear next step.</small></div><label class="field">Heading<input name="bannerHeading" value="${esc(home.heading || "")}" placeholder="A better daily ritual"></label><label class="field">Subheading<textarea name="bannerSubheading" rows="3">${esc(home.subheading || "")}</textarea></label><div class="form-columns"><label class="field">Button text<input name="buttonText" value="${esc(home.buttonText || "")}" placeholder="Shop now"></label><label class="field">Button action<select name="buttonTargetType"><option value="product" ${targetType === "product" ? "selected" : ""}>Open product</option><option value="page" ${targetType === "page" ? "selected" : ""}>Open product page</option><option value="url" ${targetType === "url" ? "selected" : ""}>Open web address</option></select></label></div><label class="field" data-store-target="product">Product<select name="buttonProductId">${targetOptions(data.products, home.buttonTarget?.id, (item) => item.name)}</select></label><label class="field" data-store-target="page">Product page<select name="buttonPageId">${targetOptions(data.pages, home.buttonTarget?.id, (item) => item.title)}</select></label><label class="field" data-store-target="url">Web address<input name="buttonTargetUrl" value="${esc(targetType === "url" ? home.buttonTargetUrl || home.buttonTarget?.url || "" : "")}" placeholder="https://example.com or /store-path"></label></fieldset>
+      <fieldset class="store-editor-fieldset"><legend>Featured Products</legend><label class="toggle-row store-section-visibility"><span><strong>Show featured products</strong><small>Display selected products on the homepage.</small></span><input name="featuredVisible" type="checkbox" role="switch" ${home.featuredVisible !== false ? "checked" : ""}></label><label class="field">Section heading<input name="sectionHeading" value="${esc(home.sectionHeading || "Featured Products")}"></label><div class="store-product-choices">${products || "<p>Create a product before configuring the homepage.</p>"}</div></fieldset>
       <fieldset class="store-editor-fieldset"><legend>Footer</legend><label class="toggle-row"><span><strong>Show Product Links</strong><small>List featured products in the footer.</small></span><input name="footerShowProducts" type="checkbox" ${footer.showProducts !== false ? "checked" : ""}></label><label class="field">Contact Information<textarea name="footerContact" rows="3" maxlength="500" placeholder="Email, phone, or support hours">${esc(footer.contact || "")}</textarea></label><p class="notice">Published policy links are added automatically.</p></fieldset>
+      <fieldset class="store-editor-fieldset store-code-panel"><legend>Theme CSS</legend><p class="store-code-note">Add safe CSS to fine-tune this theme. External files and script-like rules are blocked.</p><label class="field">Custom CSS<textarea name="customCss" rows="18" spellcheck="false" placeholder=".store-home-hero {\n  min-height: 520px;\n}">${esc(home.customCss || "")}</textarea></label></fieldset>
+      <input name="homeSectionOrder" type="hidden" value='${esc(JSON.stringify(home.sectionOrder || ["banner", "featured"]))}'>
       <div class="store-editor-actions"><button class="secondary" type="submit">Save Draft</button><button class="primary" id="publish-store-home" type="button">Publish Store</button></div>
     </form>
   </div>`;
@@ -981,10 +984,11 @@ function storeView() {
     ["identity", "Branding", "Shared across your website"],
     ["announcement", "Announcement", "Shared across your website"],
     ["header", "Header & menu", "Shared across your website"],
-    ["banner", "Homepage banner", "Homepage"],
+    ["banner", "Banner", "Homepage"],
     ["featured", "Featured products", "Homepage"],
     ["footer", "Footer", "Shared across your website"],
     ["connections", "Products & pages", "Product page connections"],
+    ["theme-css", "Theme CSS", "Advanced theme styles"],
   ];
   const connectedProducts = (storefront.products || []);
   const connectionRows = (data.products || []).map((product) => {
@@ -993,15 +997,47 @@ function storeView() {
     return `<article class="store-connection-row"><div class="store-connection-identity">${workspaceIcon('package')}<div><strong>${esc(product.name)}</strong><small>${connected?.status === "published" ? "Published" : "Not published"}</small></div></div><label class="field">Customer page<select data-store-page-for="${product.id}" aria-label="Page for ${esc(product.name)}"><option value="">Choose a published page</option>${pages.map((page) => `<option value="${page.id}" ${page.id === connected?.pageId ? "selected" : ""}>${esc(page.title)}</option>`).join("")}</select></label><div class="store-connection-actions"><button type="button" class="primary" data-store-connect="${product.id}" ${pages.length ? "" : "disabled"}>Save page</button><button type="button" class="icon-button" data-store-open-editor="${product.id}" title="Edit page" aria-label="Edit page for ${esc(product.name)}">${workspaceIcon('paintbrush')}</button><button type="button" class="icon-button" data-store-product-data="${product.id}" title="Product details" aria-label="Product details for ${esc(product.name)}">${workspaceIcon('settings-2')}</button>${connected?.status === "published" ? `<a class="icon-button" target="_blank" rel="noopener" href="${esc(storeUrl(`/products/${encodeURIComponent(product.slug)}`))}" title="View product" aria-label="View ${esc(product.name)}">${workspaceIcon('arrow-up-right')}</a>` : ""}</div>${pages.length ? '' : '<small>No published page available.</small>'}</article>`;
   }).join("");
   const pagePreviews = (data.pages || []).map((page) => `<option value="/api/stores/${storeId}/pages/${page.id}/preview">${esc(page.title)}${page.status !== "published" ? " (draft)" : ""}</option>`).join("");
-  settingsGrid.insertAdjacentHTML("beforebegin", `<section class="store-workspace" aria-label="Store website editor"><nav class="store-section-nav" aria-label="Store sections"><strong>Website sections</strong>${storeSections.map(([id, label]) => `<button type="button" data-store-section="${id}">${label}</button>`).join("")}</nav><div class="store-settings-area"><div class="store-section-heading"><h2 id="store-section-title"></h2><p id="store-section-scope"></p></div><div id="store-settings-host"></div><section id="store-connections" class="panel" hidden>${connectionRows || '<p class="empty">No products yet.</p>'}</section></div><section class="store-preview-panel"><div class="store-preview-toolbar"><label class="field">Website preview<select id="store-preview-page"><option value="/api/stores/${storeId}/storefront/preview">Home page</option>${pagePreviews}</select></label><div class="store-preview-devices" role="group" aria-label="Store preview size"><button type="button" class="secondary" data-store-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" class="secondary" data-store-preview-size="mobile" aria-pressed="false">Mobile</button></div><button type="button" class="secondary" id="store-preview-refresh">Refresh preview</button></div><p class="helper-text">Preview shows your saved settings. Save your changes to update it.</p><div class="store-preview-frame" id="store-preview-frame"><iframe id="store-website-preview" title="Store website preview" src="/api/stores/${storeId}/storefront/preview"></iframe></div></section></section>`);
-  $("#show-store-admin-preview").onclick = () => {
+  const sectionInfo = Object.fromEntries(storeSections.map(([id, label, scope]) => [id, { label, scope }]));
+  const sectionOrder = home.sectionOrder || ["banner", "featured"];
+  const sectionRow = (id) => {
+    const visible = id === "banner" ? home.bannerVisible !== false : home.featuredVisible !== false;
+    return `<div class="store-section-row" data-home-section="${id}"><button class="store-section-drag" type="button" title="Move ${esc(sectionInfo[id].label)}" aria-label="Move ${esc(sectionInfo[id].label)}">${workspaceIcon('grip-vertical')}</button><button type="button" data-store-section="${id}">${esc(sectionInfo[id].label)}</button><button class="store-section-eye" type="button" data-store-visibility="${id}" aria-pressed="${visible}" title="${visible ? "Hide" : "Show"} ${esc(sectionInfo[id].label)}" aria-label="${visible ? "Hide" : "Show"} ${esc(sectionInfo[id].label)}">${workspaceIcon(visible ? 'eye' : 'eye-off')}</button><span class="store-section-move"><button type="button" data-section-move="up" aria-label="Move ${esc(sectionInfo[id].label)} up">${workspaceIcon('chevron-up')}</button><button type="button" data-section-move="down" aria-label="Move ${esc(sectionInfo[id].label)} down">${workspaceIcon('chevron-down')}</button></span></div>`;
+  };
+  const themeToolbar = themeEditor ? `<header class="store-editor-toolbar"><div class="store-editor-toolbar-start"><button type="button" class="icon-button" id="back-online-themes" title="Back to themes" aria-label="Back to themes">${workspaceIcon('chevron-left')}</button><div class="store-editor-title"><strong>${esc(data.store.name)}</strong><span id="store-editor-status">${status === "published" ? "Published" : "Draft saved"}</span></div></div><label class="store-page-selector"><span class="sr-only">Preview page</span><select id="store-preview-page"><option value="/api/stores/${storeId}/storefront/preview">Home page</option>${pagePreviews}</select></label><div class="store-editor-toolbar-end"><div class="store-preview-devices" role="group" aria-label="Store preview size"><button type="button" class="icon-button" data-store-preview-size="desktop" aria-pressed="true" title="Desktop preview" aria-label="Desktop preview">${workspaceIcon('monitor')}</button><button type="button" class="icon-button" data-store-preview-size="mobile" aria-pressed="false" title="Mobile preview" aria-label="Mobile preview">${workspaceIcon('smartphone')}</button></div><button type="button" class="icon-button" id="store-editor-undo" title="Undo" aria-label="Undo" disabled>${workspaceIcon('undo-2')}</button><button type="button" class="icon-button" id="store-editor-redo" title="Redo" aria-label="Redo" disabled>${workspaceIcon('redo-2')}</button><details class="store-editor-more"><summary class="icon-button" title="More actions" aria-label="More actions">${workspaceIcon('ellipsis')}</summary><div><button type="button" data-open-theme-css>${workspaceIcon('code-xml')}<span>Edit theme CSS</span></button>${liveStoreAction || `<a href="/api/stores/${storeId}/storefront/preview/open" target="_blank" rel="noopener">${workspaceIcon('eye')}<span>Open saved preview</span></a>`}</div></details><div id="store-editor-primary-actions"></div></div></header><div class="store-editor-mobile-tabs" role="tablist" aria-label="Editor panels"><button type="button" role="tab" data-editor-tab="sections" aria-selected="true">Sections</button><button type="button" role="tab" data-editor-tab="preview" aria-selected="false">Preview</button><button type="button" role="tab" data-editor-tab="settings" aria-selected="false">Settings</button></div>` : "";
+  const navigation = themeEditor
+    ? `<nav class="store-section-nav" aria-label="Store sections"><div class="store-section-nav-head"><strong>Home page</strong><button type="button" class="icon-button" id="store-preview-refresh" title="Refresh preview" aria-label="Refresh preview">${workspaceIcon('redo-2')}</button></div><div class="store-section-group"><span>Theme</span><button type="button" data-store-section="identity">${workspaceIcon('paintbrush')}<span>Branding</span></button><button type="button" data-store-section="theme-css">${workspaceIcon('code-xml')}<span>Theme CSS</span></button></div><div class="store-section-group"><span>Header</span><button type="button" data-store-section="announcement">${workspaceIcon('panels-top-left')}<span>Announcement</span></button><button type="button" data-store-section="header">${workspaceIcon('menu')}<span>Header and menu</span></button></div><div class="store-section-group"><span>Template</span><div class="store-home-section-list">${sectionOrder.map(sectionRow).join("")}</div><button type="button" class="store-add-section" id="store-add-section">${workspaceIcon('plus')}<span>Add hidden section</span></button></div><div class="store-section-group"><span>Footer</span><button type="button" data-store-section="footer">${workspaceIcon('panels-top-left')}<span>Footer</span></button></div><div class="store-section-group"><span>Connections</span><button type="button" data-store-section="connections">${workspaceIcon('package')}<span>Products and pages</span></button></div></nav>`
+    : `<nav class="store-section-nav" aria-label="Store sections"><strong>Website sections</strong>${storeSections.filter(([id]) => id !== "theme-css").map(([id, label]) => `<button type="button" data-store-section="${id}">${label}</button>`).join("")}</nav>`;
+  const previewToolbarMarkup = themeEditor ? "" : `<div class="store-preview-toolbar"><label class="field">Website preview<select id="store-preview-page"><option value="/api/stores/${storeId}/storefront/preview">Home page</option>${pagePreviews}</select></label><div class="store-preview-devices" role="group" aria-label="Store preview size"><button type="button" class="secondary" data-store-preview-size="desktop" aria-pressed="true">Desktop</button><button type="button" class="secondary" data-store-preview-size="mobile" aria-pressed="false">Mobile</button></div><button type="button" class="secondary" id="store-preview-refresh">Refresh preview</button></div><p class="helper-text">Preview shows your saved settings. Save your changes to update it.</p>`;
+  settingsGrid.insertAdjacentHTML("beforebegin", `${themeToolbar}<section class="store-workspace" aria-label="Store website editor">${navigation}<section class="store-preview-panel">${previewToolbarMarkup}<div class="store-preview-frame" id="store-preview-frame"><iframe id="store-website-preview" title="Store website preview" src="/api/stores/${storeId}/storefront/preview"></iframe></div></section><div class="store-settings-area"><div class="store-section-heading"><button type="button" class="icon-button store-settings-back" data-editor-tab="sections" title="Back to sections" aria-label="Back to sections">${workspaceIcon('chevron-left')}</button><div><h2 id="store-section-title"></h2><p id="store-section-scope"></p></div></div><div id="store-settings-host"></div><section id="store-connections" class="panel" hidden>${connectionRows || '<p class="empty">No products yet.</p>'}</section></div></section>`);
+  if (themeEditor) $("#back-online-themes").onclick = () => navigateTo('/online-store/themes');
+  $("#show-store-admin-preview")?.addEventListener("click", () => {
     const preview = $("#store-preview-frame");
     preview.scrollIntoView({ behavior: "smooth", block: "center" });
     $("#store-website-preview").focus({ preventScroll: true });
-  };
+  });
   $("#store-settings-host").append(settingsGrid);
   const fieldsets = [...$("#store-home-form").querySelectorAll(".store-editor-fieldset")];
-  ["announcement", "header", "banner", "featured", "footer"].forEach((id, index) => { fieldsets[index].dataset.storeSectionPanel = id; });
+  ["announcement", "header", "banner", "featured", "footer", "theme-css"].forEach((id, index) => { fieldsets[index].dataset.storeSectionPanel = id; });
+  const setEditorTab = (tab) => {
+    const workspace = $(".store-workspace");
+    if (!workspace) return;
+    workspace.dataset.mobilePanel = tab;
+    document.querySelectorAll("[data-editor-tab]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.editorTab === tab)));
+  };
+  const highlightStorePreviewSection = (id) => {
+    const preview = $("#store-website-preview")?.contentDocument;
+    if (!preview?.body) return;
+    let style = preview.querySelector("#commera-editor-selection-style");
+    if (!style) {
+      style = preview.createElement("style");
+      style.id = "commera-editor-selection-style";
+      style.textContent = '[data-store-editor-selected]{outline:3px solid #148a8e!important;outline-offset:-3px;position:relative}';
+      preview.head.append(style);
+    }
+    preview.querySelectorAll("[data-store-editor-selected]").forEach((element) => element.removeAttribute("data-store-editor-selected"));
+    const selected = preview.querySelector(`[data-store-editor-section="${id}"]`);
+    if (selected) selected.setAttribute("data-store-editor-selected", "");
+  };
   const showStoreSection = (id) => {
     const selected = storeSections.find((section) => section[0] === id) || storeSections[3];
     storeEditorSection = selected[0];
@@ -1015,11 +1051,20 @@ function storeView() {
       button.classList.toggle("active", button.dataset.storeSection === id);
       button.setAttribute("aria-current", button.dataset.storeSection === id ? "true" : "false");
     });
+    document.querySelectorAll("[data-home-section]").forEach((row) => row.classList.toggle("active", row.dataset.homeSection === id));
+    if (themeEditor && innerWidth < 800) setEditorTab("settings");
+    highlightStorePreviewSection(id);
   };
+  document.querySelectorAll("[data-editor-tab]").forEach((button) => { button.onclick = () => setEditorTab(button.dataset.editorTab); });
+  $("[data-open-theme-css]")?.addEventListener("click", () => {
+    $(".store-editor-more")?.removeAttribute("open");
+    showStoreSection("theme-css");
+  });
   document.querySelectorAll("[data-store-section]").forEach((button) => { button.onclick = () => showStoreSection(button.dataset.storeSection); });
   showStoreSection(storeEditorSection);
   const previewFrame = $("#store-website-preview");
   const previewContainer = $('#store-preview-frame');
+  if (themeEditor && innerWidth <= 800) previewContainer.classList.add('is-mobile');
   const sizeStorePreview = () => {
     const width = previewContainer.classList.contains('is-mobile') ? 390 : 1100;
     const available = previewContainer.clientWidth;
@@ -1035,24 +1080,143 @@ function storeView() {
     storePreviewResizeObserver = new ResizeObserver(sizeStorePreview);
     storePreviewResizeObserver.observe(previewContainer);
   }
+  if (previewContainer.classList.contains('is-mobile')) {
+    document.querySelectorAll("[data-store-preview-size]").forEach((item) => item.setAttribute("aria-pressed", String(item.dataset.storePreviewSize === "mobile")));
+  }
   sizeStorePreview();
+  const syncStorePreview = () => {
+    if (!$("#store-preview-page")?.value.includes("/storefront/preview")) return;
+    const preview = previewFrame.contentDocument;
+    if (!preview?.body) return;
+    const identity = $("#store-identity-form"), form = $("#store-home-form");
+    preview.body.style.setProperty("--store-primary", identity.elements.primaryColor.value);
+    preview.body.style.setProperty("--store-secondary", identity.elements.secondaryColor.value);
+    preview.body.style.setProperty("--store-heading-font", identity.elements.headingFont.value);
+    preview.body.style.setProperty("--store-body-font", identity.elements.bodyFont.value);
+    const storeName = identity.elements.storeName.value;
+    const logoAlt = identity.elements.logoAlt.value || storeName;
+    preview.title = storeName;
+    preview.querySelectorAll(".store-site-brand strong,.store-home-hero-copy .eyebrow").forEach((node) => { node.textContent = storeName; });
+    preview.querySelectorAll(".store-site-brand img").forEach((image) => { image.alt = logoAlt; });
+    const copyright = preview.querySelector(".store-policy-footer > small");
+    if (copyright) copyright.textContent = `© ${new Date().getFullYear()} ${storeName}`;
+
+    const headerElement = preview.querySelector(".store-site-header");
+    if (headerElement) {
+      headerElement.classList.toggle("is-sticky", form.elements.headerSticky.checked);
+      let links = [];
+      try { links = readStoreMenuLinks(form); } catch {}
+      if (links.length) {
+        const markup = links.map((link) => `<a href="${esc(link.url)}">${esc(link.label)}</a>`).join("");
+        headerElement.querySelectorAll("nav").forEach((nav) => { nav.innerHTML = markup; });
+      }
+    }
+
+    let announcementElement = preview.querySelector(".store-announcement");
+    if (form.elements.announcementEnabled.checked && !announcementElement && headerElement) {
+      announcementElement = preview.createElement("aside");
+      announcementElement.className = "store-announcement";
+      announcementElement.dataset.storeEditorSection = "announcement";
+      announcementElement.innerHTML = "<span></span><a></a>";
+      headerElement.before(announcementElement);
+    }
+    if (announcementElement) {
+      announcementElement.hidden = !form.elements.announcementEnabled.checked;
+      announcementElement.style.setProperty("--announcement-bg", form.elements.announcementBackground.value);
+      announcementElement.style.setProperty("--announcement-text", form.elements.announcementTextColor.value);
+      announcementElement.querySelector("span").textContent = form.elements.announcementMessage.value;
+      let link = announcementElement.querySelector("a");
+      if (!link) { link = preview.createElement("a"); announcementElement.append(link); }
+      link.textContent = form.elements.announcementLinkText.value;
+      link.href = form.elements.announcementLinkUrl.value || "#";
+      link.hidden = !form.elements.announcementLinkText.value;
+    }
+
+    const banner = preview.querySelector('[data-store-editor-section="banner"]');
+    if (banner) {
+      banner.hidden = !form.elements.bannerVisible.checked;
+      const copy = banner.querySelector(".store-home-hero-copy");
+      let heading = copy?.querySelector("h1"), subheading = copy?.querySelector("p"), button = copy?.querySelector(".hero-cta");
+      if (!heading && copy) { heading = preview.createElement("h1"); copy.querySelector(".eyebrow")?.after(heading); }
+      if (!subheading && copy) { subheading = preview.createElement("p"); heading?.after(subheading); }
+      if (!button && copy) { button = preview.createElement("a"); button.className = "hero-cta"; copy.append(button); }
+      if (heading) { heading.textContent = form.elements.bannerHeading.value; heading.hidden = !form.elements.bannerHeading.value; }
+      if (subheading) { subheading.textContent = form.elements.bannerSubheading.value; subheading.hidden = !form.elements.bannerSubheading.value; }
+      if (button) {
+        const type = form.elements.buttonTargetType.value;
+        let href = "#";
+        if (type === "product") {
+          const product = (data.products || []).find((item) => item.id === Number(form.elements.buttonProductId.value));
+          if (product) href = `/s/${encodeURIComponent(data.store.slug)}/products/${encodeURIComponent(product.slug)}`;
+        } else if (type === "page") {
+          const page = (data.pages || []).find((item) => item.id === Number(form.elements.buttonPageId.value));
+          if (page) href = `/s/${encodeURIComponent(data.store.slug)}/${encodeURIComponent(page.slug)}`;
+        } else {
+          const value = form.elements.buttonTargetUrl.value.trim();
+          if (/^(https?:\/\/|\/|#)/i.test(value)) href = value;
+        }
+        button.textContent = form.elements.buttonText.value;
+        button.href = href;
+        button.hidden = !form.elements.buttonText.value;
+      }
+      const source = form.querySelector("#store-banner-image-preview")?.src;
+      let image = banner.querySelector(".store-home-banner");
+      if (source && !image) { image = preview.createElement("img"); image.className = "store-home-banner"; image.alt = form.elements.bannerHeading.value; banner.prepend(image); }
+      if (source && image) image.src = source;
+    }
+    const featured = preview.querySelector('[data-store-editor-section="featured"]');
+    if (featured) {
+      featured.hidden = !form.elements.featuredVisible.checked;
+      const heading = featured.querySelector("h2");
+      if (heading) heading.textContent = form.elements.sectionHeading.value;
+      const selected = new Set([...form.querySelectorAll('[name="featuredProductIds"]:checked')].map((input) => input.value));
+      featured.querySelectorAll("[data-product-id]").forEach((card) => { card.hidden = !selected.has(card.dataset.productId); });
+    }
+    const footerElement = preview.querySelector('[data-store-editor-section="footer"]');
+    if (footerElement) {
+      const contact = footerElement.querySelector("#contact");
+      let paragraph = contact?.querySelector("p");
+      if (!paragraph && contact) { paragraph = preview.createElement("p"); contact.append(paragraph); }
+      if (paragraph) { paragraph.textContent = form.elements.footerContact.value; paragraph.hidden = !form.elements.footerContact.value; }
+      const productNav = footerElement.querySelector('nav[aria-label="Products"]');
+      if (productNav) productNav.hidden = !form.elements.footerShowProducts.checked;
+    }
+    const contentElement = preview.querySelector(".storefront-home-content");
+    if (contentElement) {
+      let order = ["banner", "featured"];
+      try { order = JSON.parse(form.elements.homeSectionOrder.value); } catch {}
+      order.forEach((id) => {
+        const section = preview.querySelector(`[data-store-editor-section="${id}"]`);
+        if (section) contentElement.append(section);
+      });
+    }
+    let customStyle = preview.querySelector("#commera-theme-custom-style");
+    if (!customStyle) { customStyle = preview.createElement("style"); customStyle.id = "commera-theme-custom-style"; preview.head.append(customStyle); }
+    const css = form.elements.customCss.value;
+    customStyle.textContent = /<\/?style\b|@import\b|(?:url|image-set)\s*\(|expression\s*\(|behavior\s*:|-moz-binding\s*:/i.test(css) ? "" : css;
+    highlightStorePreviewSection(storeEditorSection);
+  };
   // In the editor, preview clicks select settings rather than running checkout.
   const wireStorePreview = () => {
     const preview = previewFrame.contentDocument;
     if (!preview?.body) return;
+    syncStorePreview();
     preview.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); }, true);
     preview.addEventListener("click", (event) => {
       event.preventDefault();
       event.stopImmediatePropagation();
       const target = event.target;
-      const sections = [[".store-announcement", "announcement"], [".store-site-header", "header"], [".store-policy-footer", "footer"], [".store-home-products", "featured"], [".store-home-hero", "banner"]];
-      const section = sections.find(([selector]) => target.closest?.(selector));
-      if (section) showStoreSection(section[1]);
+      const section = target.closest?.("[data-store-editor-section]");
+      if (section) showStoreSection(section.dataset.storeEditorSection);
     }, true);
+    highlightStorePreviewSection(storeEditorSection);
   };
   previewFrame.addEventListener("load", wireStorePreview);
   wireStorePreview();
-  $("#store-preview-page").onchange = (event) => { $("#store-website-preview").src = event.target.value; };
+  $("#store-preview-page").onchange = (event) => {
+    $("#store-website-preview").src = event.target.value;
+    if (!event.target.value.includes("/storefront/preview")) showStoreSection("connections");
+  };
   $("#store-preview-refresh").onclick = () => { $("#store-website-preview").src = $("#store-preview-page").value; };
   document.querySelectorAll("[data-store-preview-size]").forEach((button) => {
     button.onclick = () => {
@@ -1091,6 +1255,10 @@ function storeView() {
       file
         ? { name: file.name, type: file.type, data: await fileToBase64(file) }
         : undefined;
+  // Keep ordering valid even when an older cached page omitted the hidden value.
+  if (!homeForm.elements.homeSectionOrder.value) {
+    homeForm.elements.homeSectionOrder.value = JSON.stringify(sectionOrder);
+  }
   const saveIdentity = async () => {
       const values = Object.fromEntries(new FormData(identityForm)),
         payload = {
@@ -1149,6 +1317,17 @@ function storeView() {
         headerSticky: homeForm.elements.headerSticky.checked,
         footerContact: values.footerContact,
         footerShowProducts: homeForm.elements.footerShowProducts.checked,
+        bannerVisible: homeForm.elements.bannerVisible.checked,
+        featuredVisible: homeForm.elements.featuredVisible.checked,
+        sectionOrder: (() => {
+          try {
+            const order = JSON.parse(values.homeSectionOrder || "[]");
+            return order.length ? order : [...sectionOrder];
+          } catch {
+            return [...sectionOrder];
+          }
+        })(),
+        customCss: values.customCss,
       },
       bannerImage = await asset(homeForm.elements.bannerImage.files[0]);
     if (bannerImage) payload.bannerImage = bannerImage;
@@ -1157,7 +1336,11 @@ function storeView() {
       body: JSON.stringify(payload),
     });
   };
-  let identityDirty = false, homeDirty = false;
+  let identityDirty = false, homeDirty = false, saving = false;
+  const updateEditorStatus = (message) => {
+    const element = $("#store-editor-status");
+    if (element) element.textContent = message;
+  };
   const showStoreSaveError = (error) => {
     const status = $("#store-save-error");
     status.textContent = error.message;
@@ -1165,23 +1348,157 @@ function storeView() {
     toast(error.message);
   };
   const saveStoreDraft = async () => {
+    if (saving) return false;
+    saving = true;
+    updateEditorStatus("Saving...");
     $("#store-save-error").hidden = true;
     try {
       if (identityDirty) await saveIdentity();
       if (homeDirty) await saveHome();
       data = await api(`/api/stores/${storeId}/dashboard`);
       identityDirty = homeDirty = productPageDirty = false;
+      updateEditorStatus("Draft saved");
       return true;
-    } catch (error) { showStoreSaveError(error); return false; }
+    } catch (error) { updateEditorStatus("Save failed"); showStoreSaveError(error); return false; }
+    finally { saving = false; }
   };
-  identityForm.oninput = () => { identityDirty = productPageDirty = true; productPageSaveHandler = saveStoreDraft; };
-  homeForm.oninput = () => { homeDirty = productPageDirty = true; productPageSaveHandler = saveStoreDraft; };
   setupStoreEditorControls(homeForm);
+  const namedControls = () => [...identityForm.querySelectorAll("input[name]:not([type=file]),select[name],textarea[name]"), ...homeForm.querySelectorAll("input[name]:not([type=file]),select[name],textarea[name]")];
+  const editorSnapshot = () => ({
+    controls: namedControls().map((control) => ({ value: control.value, checked: Boolean(control.checked), type: control.type })),
+    menu: [...homeForm.querySelectorAll(".store-menu-row")].map((row) => ({ label: row.querySelector("[data-menu-label]").value, url: row.querySelector("[data-menu-url]").value })),
+  });
+  let editorHistory = [editorSnapshot()], editorHistoryIndex = 0, historyTimer = 0, restoringHistory = false;
+  const updateHistoryButtons = () => {
+    if (!themeEditor) return;
+    $("#store-editor-undo").disabled = editorHistoryIndex <= 0;
+    $("#store-editor-redo").disabled = editorHistoryIndex >= editorHistory.length - 1;
+  };
+  const recordEditorHistory = () => {
+    if (restoringHistory) return;
+    const snapshot = editorSnapshot(), serialized = JSON.stringify(snapshot);
+    if (serialized === JSON.stringify(editorHistory[editorHistoryIndex])) return;
+    editorHistory = editorHistory.slice(0, editorHistoryIndex + 1);
+    editorHistory.push(snapshot);
+    if (editorHistory.length > 40) editorHistory.shift();
+    editorHistoryIndex = editorHistory.length - 1;
+    updateHistoryButtons();
+  };
+  const scheduleEditorHistory = () => {
+    clearTimeout(historyTimer);
+    historyTimer = setTimeout(recordEditorHistory, 180);
+  };
+  const updateHomeSectionNavigation = () => {
+    const list = $(".store-home-section-list");
+    if (!list) return;
+    let order = ["banner", "featured"];
+    try { order = JSON.parse(homeForm.elements.homeSectionOrder.value); } catch {}
+    order.forEach((id) => { const row = list.querySelector(`[data-home-section="${id}"]`); if (row) list.append(row); });
+    [...list.children].forEach((row, index, rows) => {
+      row.draggable = true;
+      row.querySelector('[data-section-move="up"]').disabled = index === 0;
+      row.querySelector('[data-section-move="down"]').disabled = index === rows.length - 1;
+      const id = row.dataset.homeSection, checkbox = homeForm.elements[`${id}Visible`], eye = row.querySelector("[data-store-visibility]");
+      eye.setAttribute("aria-pressed", String(checkbox.checked));
+      eye.title = `${checkbox.checked ? "Hide" : "Show"} ${sectionInfo[id].label}`;
+      eye.setAttribute("aria-label", eye.title);
+      eye.querySelector("img").src = `/icons/${checkbox.checked ? "eye" : "eye-off"}.svg`;
+      row.classList.toggle("is-hidden", !checkbox.checked);
+    });
+    const addSection = $("#store-add-section");
+    if (addSection) {
+      const hasHiddenSection = ["banner", "featured"].some((id) => !homeForm.elements[`${id}Visible`].checked);
+      addSection.disabled = !hasHiddenSection;
+      addSection.querySelector("span").textContent = hasHiddenSection ? "Add hidden section" : "All sections added";
+      addSection.title = hasHiddenSection ? "Restore a hidden homepage section" : "Hide a section before adding it again";
+    }
+  };
+  const commitSectionOrder = () => {
+    const list = $(".store-home-section-list");
+    homeForm.elements.homeSectionOrder.value = JSON.stringify([...list.children].map((row) => row.dataset.homeSection));
+    updateHomeSectionNavigation();
+    homeForm.dispatchEvent(new Event("input", { bubbles: true }));
+  };
+  const sectionList = $(".store-home-section-list");
+  if (sectionList) {
+    let draggedSection = null;
+    sectionList.onclick = (event) => {
+      const visibility = event.target.closest("[data-store-visibility]");
+      if (visibility) {
+        const id = visibility.dataset.storeVisibility, checkbox = homeForm.elements[`${id}Visible`];
+        checkbox.checked = !checkbox.checked;
+        updateHomeSectionNavigation();
+        homeForm.dispatchEvent(new Event("input", { bubbles: true }));
+        showStoreSection(id);
+        if (themeEditor && innerWidth < 800) setEditorTab("sections");
+        return;
+      }
+      const move = event.target.closest("[data-section-move]");
+      if (!move) return;
+      const row = move.closest("[data-home-section]");
+      if (move.dataset.sectionMove === "up" && row.previousElementSibling) sectionList.insertBefore(row, row.previousElementSibling);
+      if (move.dataset.sectionMove === "down" && row.nextElementSibling) sectionList.insertBefore(row.nextElementSibling, row);
+      commitSectionOrder();
+    };
+    sectionList.ondragstart = (event) => { draggedSection = event.target.closest("[data-home-section]"); event.dataTransfer.effectAllowed = "move"; };
+    sectionList.ondragover = (event) => { event.preventDefault(); const row = event.target.closest("[data-home-section]"); if (draggedSection && row && row !== draggedSection) sectionList.insertBefore(draggedSection, row.getBoundingClientRect().top + row.offsetHeight / 2 < event.clientY ? row.nextSibling : row); };
+    sectionList.ondrop = (event) => { event.preventDefault(); if (draggedSection) commitSectionOrder(); draggedSection = null; };
+    sectionList.ondragend = () => { draggedSection = null; };
+    updateHomeSectionNavigation();
+  }
+  $("#store-add-section")?.addEventListener("click", () => {
+    const id = ["banner", "featured"].find((section) => !homeForm.elements[`${section}Visible`].checked);
+    if (!id) return toast("All homepage sections are already visible");
+    homeForm.elements[`${id}Visible`].checked = true;
+    updateHomeSectionNavigation();
+    homeForm.dispatchEvent(new Event("input", { bubbles: true }));
+    showStoreSection(id);
+  });
+  const markStoreDirty = (kind) => {
+    if (kind === "identity") identityDirty = true;
+    else homeDirty = true;
+    productPageDirty = true;
+    productPageSaveHandler = saveStoreDraft;
+    updateEditorStatus("Unsaved changes");
+    syncTarget();
+    syncStorePreview();
+    scheduleEditorHistory();
+  };
+  identityForm.oninput = () => markStoreDirty("identity");
+  homeForm.oninput = () => markStoreDirty("home");
+  homeForm.addEventListener("store-preview-image", syncStorePreview);
+  const restoreEditorHistory = (index) => {
+    const snapshot = editorHistory[index];
+    if (!snapshot) return;
+    restoringHistory = true;
+    namedControls().forEach((control, controlIndex) => {
+      const saved = snapshot.controls[controlIndex];
+      if (!saved) return;
+      if (control.type === "checkbox" || control.type === "radio") control.checked = saved.checked;
+      else control.value = saved.value;
+    });
+    homeForm.querySelector("#store-menu-links").innerHTML = snapshot.menu.map(storeMenuRow).join("");
+    setupStoreEditorControls(homeForm);
+    editorHistoryIndex = index;
+    identityDirty = homeDirty = productPageDirty = true;
+    productPageSaveHandler = saveStoreDraft;
+    updateEditorStatus("Unsaved changes");
+    syncTarget();
+    updateHomeSectionNavigation();
+    syncStorePreview();
+    updateHistoryButtons();
+    restoringHistory = false;
+  };
+  if (themeEditor) {
+    $("#store-editor-undo").onclick = () => { clearTimeout(historyTimer); recordEditorHistory(); restoreEditorHistory(editorHistoryIndex - 1); };
+    $("#store-editor-redo").onclick = () => { clearTimeout(historyTimer); restoreEditorHistory(editorHistoryIndex + 1); };
+    updateHistoryButtons();
+  }
   identityForm.onsubmit = homeForm.onsubmit = async (event) => {
     event.preventDefault();
     if (await saveStoreDraft()) {
-      toast("Store draft saved — publish the store to apply it");
-      await load();
+      toast("Store draft saved. Publish when you are ready.");
+      previewFrame.src = $("#store-preview-page").value;
     }
   };
   $("#publish-store-home").onclick = async () => {
@@ -1192,20 +1509,23 @@ function storeView() {
         body: "{}",
       });
       toast("Store published");
-      await load();
+      updateEditorStatus("Published");
+      previewFrame.src = $("#store-preview-page").value;
     } catch (error) {
       showStoreSaveError(error);
     }
   };
   // Keep draft and publication controls accessible from every section.
-  const previewToolbar = $(".store-preview-toolbar");
+  const actionHost = themeEditor ? $("#store-editor-primary-actions") : $(".store-preview-toolbar");
   const saveDraftButton = document.createElement("button");
   saveDraftButton.type = "button";
-  saveDraftButton.className = "secondary";
-  saveDraftButton.textContent = "Save design draft";
+  saveDraftButton.className = themeEditor ? "secondary store-editor-save" : "secondary";
+  saveDraftButton.textContent = themeEditor ? "Save" : "Save design draft";
   saveDraftButton.dataset.storeSaveAll = '';
-  saveDraftButton.onclick = async () => { if (await saveStoreDraft()) { toast("Store draft saved"); await load(); } };
-  previewToolbar.append(saveDraftButton, $("#publish-store-home"));
+  saveDraftButton.onclick = async () => { if (await saveStoreDraft()) { toast("Store draft saved"); previewFrame.src = $("#store-preview-page").value; } };
+  const publishButton = $("#publish-store-home");
+  if (themeEditor) publishButton.textContent = "Publish";
+  actionHost.append(saveDraftButton, publishButton);
   const saveError = document.createElement("p");
   saveError.id = "store-save-error";
   saveError.className = "notice domain-error";

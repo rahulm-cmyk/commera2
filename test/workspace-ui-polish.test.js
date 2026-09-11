@@ -49,6 +49,20 @@ test('editor uses a real banner preview and structured links without the raw nav
   assert.match(css, /store-editor-panel \.form-columns \{ grid-template-columns:minmax\(0,1fr\)/);
 });
 
+test('homepage theme editor keeps every visible action functional on desktop and mobile', () => {
+  const editor = source.slice(source.indexOf('function storeView()'), source.indexOf('function homeView()'));
+  const css = readFileSync(new URL('../public/online-store.css', import.meta.url), 'utf8');
+  assert.match(editor, /data-store-section="theme-css"/);
+  assert.match(editor, /\.removeAttribute\("open"\)/);
+  assert.match(editor, /button\.href = href/);
+  assert.match(editor, /showStoreSection\("connections"\)/);
+  assert.match(editor, /setEditorTab\("sections"\)/);
+  assert.match(editor, /All sections added/);
+  assert.match(css, /#store-editor-primary-actions \{[\s\S]*?position:fixed;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
+  assert.match(css, /:is\(#store-editor-undo,#store-editor-redo\) \{[\s\S]*?position:fixed;[\s\S]*?display:grid/);
+  assert.match(css, /\.store-section-move,[\s\S]*?display:grid;[\s\S]*?grid-column:3\/5/);
+});
+
 test('uploaded pages render their sanitized source inside the visual-builder preview', () => {
   assert.match(source, /page\.creationMethod === "upload" && page\.importedHtml/);
   assert.match(source, /id="builder-imported-page-preview"/);
