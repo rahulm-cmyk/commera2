@@ -1,0 +1,49 @@
+body[data-store-design="botanical"] { --editorial-ink:#183622; --editorial-gold:#a48137; --editorial-paper:#faf8f1; }
+body[data-store-design="botanical"] .store-site-brand .store-brand-name { display:none; }
+body[data-store-design="botanical"] .store-site-header { min-height:96px; padding-inline:32px; background:#fff; }
+body[data-store-design="botanical"] .store-site-header .store-logo { width:220px; height:60px; max-width:220px; object-fit:cover; }
+body[data-store-design="botanical"] .store-home-hero { padding-block:48px 60px; min-height:0; background:#faf6ea; grid-template-columns:1.02fr .98fr; gap:64px; }
+body[data-store-design="botanical"] .store-home-banner { height:min(600px,calc(100svh - 240px)); min-height:460px; aspect-ratio:4/5.1; border-radius:220px 220px 28px 28px; box-shadow:0 32px 65px #18362226; }
+body[data-store-design="botanical"] :is(.hero-cta,.hero-secondary,.theme-section-button) { font-family:Arial,sans-serif; }
+body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:66px; line-height:1.08; max-width:560px; }
+body[data-store-design="botanical"] .store-home-hero-copy h1 em { margin-top:12px; }
+body[data-store-design="botanical"] .store-home-hero-copy>p { font-size:17px; line-height:1.7; }
+body[data-store-design="botanical"] .hero-badges li { font-size:11px; padding:7px 10px; background:white; }
+body[data-store-design="botanical"] #section-nivkara-spotlight { background:#f8f1df; }
+body[data-store-design="botanical"] #section-nivkara-spotlight img { object-fit:contain; background:#eee8d6; border-radius:8px; }
+body[data-store-design="botanical"] #section-nivkara-spotlight .theme-section-intro { font-size:20px; color:#183622; }
+body[data-store-design="botanical"] #section-nivkara-story .theme-section-inner { align-items:stretch; }
+body[data-store-design="botanical"] #section-nivkara-story img { height:100%; object-fit:cover; }
+body[data-store-design="botanical"] #section-nivkara-story .theme-section-copy { align-content:center; }
+body[data-store-design="botanical"] .theme-custom-section h2 { font-size:46px; line-height:1.12; }
+body[data-store-design="botanical"] #section-nivkara-problem h2 { max-width:660px; }
+body[data-store-design="botanical"] #section-nivkara-method h2 { max-width:640px; }
+body[data-store-design="botanical"] #section-nivkara-ingredients { background:#fffcf5; }
+body[data-store-design="botanical"] #section-nivkara-ingredients img { aspect-ratio:1/1; }
+body[data-store-design="botanical"] .featured-grid { gap:28px; }
+body[data-store-design="botanical"] .featured-product-card { padding:0; }
+body[data-store-design="botanical"] .featured-product-card>a>img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#f3ecdc; border-radius:8px; }
+body[data-store-design="botanical"] .featured-product-card>a>div { padding:24px 0; }
+body[data-store-design="botanical"] .featured-product-card h3 { font-size:26px; line-height:1.25; }
+body[data-store-design="botanical"] .featured-product-card p { font-size:18px; }
+body[data-store-design="botanical"] .featured-product-card span { box-shadow:none; }
+body[data-store-design="botanical"] #section-nivkara-finale img { width:min(100%,320px); justify-self:center; object-fit:contain; aspect-ratio:1/1; border-radius:8px; }
+body[data-store-design="botanical"] .theme-benefit-grid article { border-radius:8px; }
+@media(max-width:1100px) {
+  body[data-store-design="botanical"] .store-home-hero { min-height:620px; padding-block:54px; gap:36px; }
+  body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:48px; }
+  body[data-store-design="botanical"] .store-site-header { padding-inline:24px; }
+}
+@media(max-width:800px) {
+  body[data-store-design="botanical"] .store-site-header { min-height:76px; }
+  body[data-store-design="botanical"] .store-site-header .store-logo { width:160px; height:44px; }
+  body[data-store-design="botanical"] .store-home-hero { min-height:0; grid-template-columns:1fr; padding:40px 24px 36px; gap:32px; }
+  body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:42px; }
+  body[data-store-design="botanical"] .store-home-hero-copy>p { font-size:15px; }
+  body[data-store-design="botanical"] .store-home-banner { width:min(100%,430px); aspect-ratio:4/4.4; height:auto; min-height:0; border-radius:180px 180px 20px 20px; }
+  body[data-store-design="botanical"] .theme-custom-section h2 { font-size:34px; }
+  body[data-store-design="botanical"] .theme-image-text .theme-section-inner { grid-template-columns:1fr; }
+  body[data-store-design="botanical"] .featured-grid { grid-template-columns:1fr; }
+  body[data-store-design="botanical"] .featured-product-card>a>img { max-height:400px; }
+}
+@media(max-width:360px) { body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:36px; } }

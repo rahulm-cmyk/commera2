@@ -740,3 +740,9 @@ body.online-theme-editor-open:has(> #app-sidebar) .store-section-popover::backdr
 .botanical-banner-controls.is-classic { display:none; }
 .botanical-banner-controls { display:grid; gap:16px; }
 .theme-custom-editor [data-theme-image-holder] .theme-section-image { aspect-ratio:4/3; }
+.store-package-dialog { width:min(700px,calc(100% - 32px)); max-height:90dvh; overflow:auto; padding:24px; border:1px solid #dbe1e5; border-radius:8px; }
+.store-package-dialog::backdrop { background:#17212670; }
+.store-package-dialog table { width:100%; border-collapse:collapse; margin:16px 0; font-size:13px; }
+.store-package-dialog th,.store-package-dialog td { padding:10px 8px; text-align:left; border-bottom:1px solid #dbe1e5; overflow-wrap:anywhere; }
+.store-package-dialog p { font-size:13px; line-height:1.6; }
+.store-package-actions { display:flex; justify-content:flex-end; gap:10px; margin-top:20px; }

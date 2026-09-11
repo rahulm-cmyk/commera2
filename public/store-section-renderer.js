@@ -36,6 +36,6 @@ export function renderFeaturedProducts(products, store, escape) {
     const href=`/s/${encodeURIComponent(store.slug)}/products/${encodeURIComponent(item.slug)}`;
     const price=new Intl.NumberFormat('en-IN',{style:'currency',currency:store.currency||'INR'}).format((item.pricePaise||0)/100);
     const source=sectionImageSource(item.mainImage);
-    return `<article class="featured-product-card" data-product-id="${Number(item.id)}"><a href="${href}">${source?`<img src="${e(source)}" alt="${e(item.name)}" loading="lazy">`:''}<div><h3>${e(item.name)}</h3>${item.ratingCount?`<small>${Number(item.ratingAverage).toFixed(1)} / 5 · ${Number(item.ratingCount)} reviews</small>`:''}<p>${e(price)}</p><span>View product</span></div></a></article>`;
+    return `<article class="featured-product-card" data-product-id="${Number(item.id)}"><a href="${href}">${source?`<img src="${e(source)}" alt="${e(item.name)}" loading="lazy">`:''}<div><h3>${e(item.name)}</h3>${item.ratingCount?`<small>${Number(item.ratingAverage).toFixed(1)} / 5 · ${Number(item.ratingCount)} reviews</small>`:''}<p>${e(price)}</p>${item.stock===0?'<small class="product-availability">Sold out</small>':''}<span>View product</span></div></a></article>`;
   }).join('')||'<p>No featured products are published yet.</p>';
 }

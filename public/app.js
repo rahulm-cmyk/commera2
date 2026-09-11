@@ -4,6 +4,7 @@ import { mountShippingRules } from './shipping-rules.js';
 import { clientSectionMarkup, newThemeSection, readThemeSections, readThemeSectionState, refreshSectionDestinations, themeSectionBlock, themeSectionCatalog, themeSectionLabel, themeSectionPanel } from './store-theme-sections.js';
 import { botanicalHeroExtras, renderFeaturedProducts } from './store-section-renderer.js';
 import { mountBotanicalControls, readBotanicalSettings } from './store-botanical-editor.js';
+import { mountStorePackageImport } from './store-package.js';
 import { annotateEditorPreview, createPreviewInspector, createSectionPicker, editorBlocks, reconcileElement, showEditorBlock } from './store-editor-interactions.js';
 import { storePolicyConnectionsMarkup, storePolicyEntries, syncStorePolicyPreview } from './store-policy-editor.js';
 import { overviewMarkup, setupWorkspaceSearch, setupStoreSwitcher, workspaceIcon } from './merchant-workspace.js';
@@ -1533,6 +1534,12 @@ function storeView() {
     });
   };
   let identityDirty = false, homeDirty = false, saving = false, identityRevision = 0, homeRevision = 0;
+  if (themeEditor) mountStorePackageImport({
+    host: document.querySelector('.store-editor-more > div'), store: data.store, api, escape: esc,
+    isDirty: () => productPageDirty || saving,
+    isCurrent: () => storeId === editorStoreId && storeWorkspace.isConnected,
+    onSaved: async () => { productPageDirty = false; await load(); toast('Store imported. Review the homepage, then publish.'); },
+  });
   const updateEditorStatus = (message) => {
     const element = $("#store-editor-status");
     if (element) {element.textContent = message;element.dataset.state=/failed/i.test(message)?'error':/unsaved/i.test(message)?'unsaved':/saving/i.test(message)?'saving':'saved';}
