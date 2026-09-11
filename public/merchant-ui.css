@@ -1765,23 +1765,23 @@ body:has(> #app-sidebar) .store-definition h2 {
   font-size: 22px;
 }
 
-body:has(> #app-sidebar) .store-section-nav {
+body:not(.online-theme-editor-open):has(> #app-sidebar) .store-section-nav {
   border-color: var(--line);
   border-radius: 6px;
   background: transparent;
 }
 
-body:has(> #app-sidebar) .store-section-nav button {
+body:not(.online-theme-editor-open):has(> #app-sidebar) .store-section-nav button {
   border-radius: 6px;
   color: #4c5b66;
   font-size: 13px;
 }
 
-body:has(> #app-sidebar) .store-section-nav button:hover {
+body:not(.online-theme-editor-open):has(> #app-sidebar) .store-section-nav button:hover {
   background: var(--merchant-hover);
 }
 
-body:has(> #app-sidebar) .store-section-nav button.active {
+body:not(.online-theme-editor-open):has(> #app-sidebar) .store-section-nav button.active {
   background: var(--merchant-teal-soft);
   color: var(--green);
   box-shadow: none;

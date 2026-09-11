@@ -68,6 +68,10 @@ export async function readThemeSections(form,asset) {
     if(sections[index].type!=='image-with-text')continue;
     const file=panels[index].querySelector('[data-section-image]').files[0];
     if(file)sections[index].image=await asset(file);
+    else if(sections[index].image?.dataUrl) {
+      const {name,type,dataUrl}=sections[index].image;
+      sections[index].image={name,type,data:dataUrl.slice(dataUrl.indexOf(',')+1)};
+    }
   }
   return sections;
 }
@@ -76,7 +80,7 @@ export function clientSectionMarkup(section,esc) {
   const hidden=section.visible?'':' hidden',wide=section.fullWidth?' is-full-width':'',scheme=` theme-${esc(section.colorScheme)}`,align=` align-${esc(section.alignment)}`,button=section.buttonText&&section.buttonUrl?`<a class="theme-section-button" href="${esc(section.buttonUrl)}">${esc(section.buttonText)}</a>`:'';
   if(section.type==='rich-text')return `<section class="theme-custom-section theme-rich-text${wide}${scheme}${align}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2>${section.text?`<p>${esc(section.text)}</p>`:''}${button}</div></section>`;
   if(section.type==='image-with-text') { const src=section.image?.dataUrl||(section.image?.data&&section.image?.type?`data:${section.image.type};base64,${section.image.data}`:'');return `<section class="theme-custom-section theme-image-text${wide}${scheme} image-${esc(section.imagePosition)}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner">${src?`<img src="${esc(src)}" alt="${esc(section.heading)}">`:'<div class="theme-image-placeholder"></div>'}<div class="theme-section-copy"><h2>${esc(section.heading)}</h2>${section.text?`<p>${esc(section.text)}</p>`:''}${button}</div></div></section>`; }
-  if(section.type==='benefits')return `<section class="theme-custom-section theme-benefits${wide}${scheme}${align}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2><div class="theme-benefit-grid">${section.blocks.map(block=>`<article><span>✓</span><h3>${esc(block.heading)}</h3><p>${esc(block.text)}</p></article>`).join('')}</div></div></section>`;
+  if(section.type==='benefits')return `<section class="theme-custom-section theme-benefits${wide}${scheme}${align}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2>${section.text?`<p class="theme-section-intro">${esc(section.text)}</p>`:''}<div class="theme-benefit-grid">${section.blocks.map(block=>`<article><span aria-hidden="true">✓</span><h3>${esc(block.heading)}</h3><p>${esc(block.text)}</p></article>`).join('')}</div></div></section>`;
   if(section.type==='testimonials')return `<section class="theme-custom-section theme-testimonials${wide}${scheme}${align}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2><div class="theme-testimonial-grid">${section.blocks.map(block=>`<figure><blockquote>${esc(block.quote)}</blockquote><figcaption>${esc(block.name)}</figcaption></figure>`).join('')}</div></div></section>`;
-  return `<section class="theme-custom-section theme-faq${wide}${scheme}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2><div class="theme-faq-list">${section.blocks.map(block=>`<details><summary>${esc(block.question)}</summary><p>${esc(block.answer)}</p></details>`).join('')}</div></div></section>`;
+  return `<section class="theme-custom-section theme-faq${wide}${scheme}" data-store-editor-section="${esc(section.id)}"${hidden}><div class="theme-section-inner"><h2>${esc(section.heading)}</h2>${section.text?`<p class="theme-section-intro">${esc(section.text)}</p>`:''}<div class="theme-faq-list">${section.blocks.map(block=>`<details><summary>${esc(block.question)}</summary><p>${esc(block.answer)}</p></details>`).join('')}</div></div></section>`;
 }

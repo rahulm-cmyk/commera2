@@ -40,7 +40,7 @@ test('live visitor refresh is store scoped and connection status waits for an op
 
 test('editor uses a real banner preview and structured links without the raw navigation textarea', () => {
   assert.match(source, /id="store-banner-image-preview"/);
-  assert.match(source, /contains\('is-mobile'\) \? 390 : 1100/);
+  assert.match(source, /contains\('is-mobile'\) \? 390 : Math\.max\(1024,available\)/);
   assert.match(source, /storePreviewResizeObserver\?\.disconnect\(\)/);
   assert.match(source, /headerLinksValue = readStoreMenuLinks\(homeForm\)/);
   assert.doesNotMatch(source, /textarea name="headerLinks"/);
@@ -64,7 +64,11 @@ test('homepage theme editor keeps every visible action functional on desktop and
   assert.match(editor, /data-store-editor-mode="apps"/);
   assert.match(editor, /data-sidebar-view="sections"/);
   assert.match(editor, /storeInspectorEnabled/);
-  assert.match(css, /grid-template-areas:"rail sidebar preview"/);
+  assert.match(css, /grid-template-areas:"sidebar preview inspector"/);
+  assert.match(editor, /createPreviewInspector/);
+  assert.match(editor, /refreshSectionTree/);
+  assert.match(editor, /reconcileElement\(current,fresh\)/);
+  assert.doesNotMatch(editor, /current\.replaceWith\(fresh\)/);
   assert.match(css, /data-sidebar-view="settings"/);
   assert.match(css, /#store-editor-primary-actions \{[\s\S]*?position:fixed;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /:is\(#store-editor-undo,#store-editor-redo\) \{[\s\S]*?position:fixed;[\s\S]*?display:grid/);

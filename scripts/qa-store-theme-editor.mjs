@@ -1,74 +1,152 @@
 import { createRequire } from 'node:module';
 import { mkdir } from 'node:fs/promises';
+import assert from 'node:assert/strict';
+import { createDatabase } from '../src/database.js';
+import { createApp } from '../src/server.js';
 
 const require=createRequire(import.meta.url);
-const { chromium }=require(process.env.QA_PLAYWRIGHT_PATH||'playwright');
-const base=process.env.QA_BASE_URL||'http://127.0.0.1:4192';
+const {chromium}=require(process.env.QA_PLAYWRIGHT_PATH||'playwright');
 const output='data/store-theme-editor-qa';
 await mkdir(output,{recursive:true});
-
-const browser=await chromium.launch({
-  headless:true,
-  executablePath:process.env.QA_BROWSER_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe',
-});
-const page=await browser.newPage({viewport:{width:1440,height:960}});
+let app,base=process.env.QA_BASE_URL;
+const png={name:'fixture.png',type:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='};
+if(!base) {
+  process.env.DATABASE_MODE='sqlite';
+  app=createApp({db:createDatabase(':memory:'),port:0,merchantAuth:false,domainSyncIntervalMs:0,otpProviders:{},googleAuthProvider:null,accountEmailProvider:null});
+  const store=app.service.createStore({name:'Studio Store',slug:'studio-store'});
+  await app.start('127.0.0.1');base=`http://127.0.0.1:${app.port}`;
+  const patch=async(path,body)=>{const res=await fetch(`${base}/api/stores/${store.id}/storefront/${path}`,{method:'PATCH',headers:{'content-type':'application/json'},body:JSON.stringify(body)});assert.equal(res.status,200,await res.text());};
+  await patch('branding',{logo:png});
+  await patch('home',{bannerHeading:'Everyday essentials',bannerSubheading:'Made to be part of your day.',bannerImage:png,buttonText:'Explore the collection',buttonTarget:{type:'url',url:'#products'},featuredProductIds:[],announcementEnabled:true,announcementMessage:'Welcome to our store',footerContact:'hello@example.com'});
+}
+const browser=await chromium.launch({headless:true,executablePath:process.env.QA_BROWSER_PATH||'C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe'});
+const page=await browser.newPage({viewport:{width:1440,height:960},reducedMotion:'reduce'});
 const errors=[];
 page.on('pageerror',error=>errors.push(error.message));
 page.on('console',message=>{if(message.type()==='error')errors.push(message.text());});
-
+const frame=()=>page.locator('#store-website-preview').contentFrame();
+const panel=()=>page.locator('[data-theme-section-id]:not([hidden])');
+const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+const checkLayout=async(name)=>{
+  await settle();
+  const sizes=await page.evaluate(()=>{
+    const rect=selector=>{const el=document.querySelector(selector),r=el.getBoundingClientRect();return {x:r.x,right:r.right,width:r.width,visible:!!el.offsetHeight};};
+    return {overflow:document.documentElement.scrollWidth-innerWidth,workspace:document.querySelector('.store-workspace').scrollWidth-document.querySelector('.store-workspace').clientWidth,tree:rect('.store-section-nav'),preview:rect('.store-preview-panel'),settings:rect('.store-settings-area')};
+  });
+  assert.ok(sizes.overflow<=1&&sizes.workspace<=1,`${name}: ${JSON.stringify(sizes)}`);
+  if(page.viewportSize().width>800&&sizes.settings.visible){assert.ok(sizes.tree.right<=sizes.preview.x+1);assert.ok(sizes.preview.right<=sizes.settings.x+1);}
+  await page.screenshot({path:`${output}/${name}.png`});
+  return sizes;
+};
 try {
   await page.goto(`${base}/online-store/themes/current/edit`,{waitUntil:'networkidle'});
-  if(await page.locator('[data-store-editor-mode]').count()!==3)throw Error('Editor mode rail is incomplete');
-  await page.screenshot({path:`${output}/desktop-sections.png`});
+  await frame().locator('.store-home-hero-copy h1').waitFor();
+  assert.equal(await page.locator('[data-store-editor-mode]').count(),3);
+  const closedWidth=(await page.locator('.store-preview-panel').boundingBox()).width;
   await page.getByRole('button',{name:'Banner',exact:true}).click();
-  if(await page.locator('#store-section-title').textContent()!=='Banner')throw Error('Section settings did not replace the section list');
-  await page.screenshot({path:`${output}/desktop-banner-edit.png`});
-  await page.getByRole('button',{name:'Back',exact:true}).click();
-  if(await page.locator('.store-workspace').getAttribute('data-sidebar-view')!=='sections')throw Error('Back did not restore the section list');
+  await checkLayout('desktop-section');
+  assert.ok(await page.locator('.store-section-nav').isVisible(),'Selecting a section must not replace the section tree');
+  assert.ok((await page.locator('.store-preview-panel').boundingBox()).width<closedWidth);
+  await frame().locator('.store-home-hero-copy h1').click();
+  assert.equal(await page.locator('#store-section-title').textContent(),'Heading');
+  assert.ok(await page.locator('[name="bannerHeading"]').isVisible());
+  assert.equal(await page.locator('[name="bannerImage"]').isVisible(),false);
+  await page.locator('[name="bannerHeading"]').fill('A smoother store editor');
+  assert.equal(await frame().locator('.store-home-hero-copy h1').textContent(),'A smoother store editor');
+  await checkLayout('desktop-block');
+  await page.getByRole('button',{name:'Close settings',exact:true}).click();
+  assert.equal((await page.locator('.store-preview-panel').boundingBox()).width,closedWidth);
   await page.getByRole('button',{name:'Add section',exact:true}).click();
-  const choices=await page.locator('[data-add-theme-section]').allTextContents();
-  if(choices.length!==5)throw Error(`Expected 5 section choices, found ${choices.length}`);
-  await page.getByRole('button',{name:/^Collapsible content/}).click();
-  await page.getByRole('button',{name:'Add block',exact:true}).click();
-  const blocks=page.locator('.theme-custom-editor:not([hidden]) [data-theme-block]');
-  await blocks.nth(0).getByRole('textbox',{name:'Question'}).fill('First question');
-  await blocks.nth(1).getByRole('textbox',{name:'Question'}).fill('Second question');
-  await blocks.nth(1).getByRole('button',{name:'Move block up'}).click();
-  if(await blocks.nth(0).getByRole('textbox',{name:'Question'}).inputValue()!=='Second question')throw Error('Block move controls did not reorder the content');
-  await blocks.nth(1).dragTo(blocks.nth(0));
-  if(await blocks.nth(0).getByRole('textbox',{name:'Question'}).inputValue()!=='First question')throw Error('Dragging a block did not reorder the content');
-
+  const search=page.getByRole('searchbox',{name:'Search sections'});
+  await search.fill('not-a-section');
+  assert.ok(await page.getByText('No sections found',{exact:true}).isVisible());
+  await search.fill('collapsible');
+  assert.equal(await page.locator('[data-add-theme-section]:visible').count(),1);
+  await page.screenshot({path:`${output}/section-picker.png`});
+  await page.getByRole('button',{name:'Collapsible content',exact:true}).click();
+  const faqId=await panel().getAttribute('data-theme-section-id');
+  await page.locator(`[data-tree-add-block="${faqId}"]`).click();
+  await panel().locator('[data-theme-block]:not(.editor-context-hidden) [data-section-field="question"]').fill('How do I return an order?');
+  assert.equal(await page.locator(`[data-block-section="${faqId}"][data-store-block="block-1"]`).textContent(),'How do I return an order?');
+  await panel().locator('[data-theme-block]:not(.editor-context-hidden) [data-theme-block-move="up"]').click();
+  assert.equal(await panel().locator('[data-theme-block]').first().locator('[data-section-field="question"]').inputValue(),'How do I return an order?');
+  const treeBlock=index=>page.locator(`[data-block-section="${faqId}"][data-store-block="block-${index}"]`);
+  await treeBlock(1).dragTo(treeBlock(0),{targetPosition:{x:20,y:5}});
+  assert.equal(await panel().locator('[data-theme-block]').first().locator('[data-section-field="question"]').inputValue(),'Common question','Dragging in the section tree reorders the actual block');
+  await treeBlock(1).dragTo(treeBlock(0),{targetPosition:{x:20,y:5}});
+  await page.locator(`[data-home-section="${faqId}"] > [data-store-section]`).click();
+  await panel().locator('[data-section-field="text"]').first().fill('Answers about delivery and returns.');
+  const faq=frame().locator(`[data-store-editor-section="${faqId}"]`);
+  assert.equal(await faq.locator('.theme-section-intro').textContent(),'Answers about delivery and returns.');
+  await settle();
+  await faq.evaluate(section=>{window.qaSection=section;window.qaDetails=section.querySelector('details');window.qaDetails.open=true;});
+  const scrollBefore=await frame().locator('body').evaluate(()=>scrollY);
+  await panel().locator('[data-section-field="heading"]').first().fill('Your questions answered');
+  const stable=await faq.evaluate(section=>({sameSection:section===window.qaSection,sameDetails:section.querySelector('details')===window.qaDetails,open:section.querySelector('details').open,scroll:scrollY}));
+  assert.ok(stable.sameSection&&stable.sameDetails&&stable.open,JSON.stringify(stable));
+  assert.ok(Math.abs(stable.scroll-scrollBefore)<2,'Typing must preserve preview scroll');
+  await panel().locator('[data-section-field="text"]').first().fill('');
+  assert.equal(await faq.evaluate(section=>section.querySelector('details')===window.qaDetails),true,'Removing optional introduction must preserve the question DOM');
+  await panel().locator('[data-section-field="text"]').first().fill('Answers about delivery and returns.');
+  assert.equal(await faq.evaluate(section=>section.querySelector('details')===window.qaDetails),true,'Adding optional introduction must preserve the question DOM');
+  await faq.locator('summary').first().click();
+  assert.equal(await page.locator('#store-section-title').textContent(),'How do I return an order?');
+  const answer=()=>panel().locator('[data-theme-block]:not(.editor-context-hidden) [data-section-field="answer"]');
+  await answer().fill('Contact our team with your order number.');
+  await checkLayout('desktop-faq-block');
+  await page.getByRole('button',{name:'Undo',exact:true}).click();
+  assert.notEqual(await answer().inputValue(),'Contact our team with your order number.');
+  await page.getByRole('button',{name:'Redo',exact:true}).click();
+  assert.equal(await answer().inputValue(),'Contact our team with your order number.');
+  await page.locator('[data-home-section="banner"] > [data-store-section]').click();
+  await frame().getByRole('button',{name:'Add section here'}).click();
+  await page.getByRole('button',{name:'Rich text',exact:true}).click();
+  const addedId=await panel().getAttribute('data-theme-section-id');
+  const order=JSON.parse(await page.locator('[name="homeSectionOrder"]').inputValue());
+  assert.equal(order[order.indexOf('banner')+1],addedId);
+  await page.getByRole('button',{name:'Add section',exact:true}).click();
+  await page.getByRole('button',{name:'Image with text',exact:true}).click();
+  await panel().locator('[data-section-image]').setInputFiles({name:png.name,mimeType:png.type,buffer:Buffer.from(png.data,'base64')});
+  await panel().locator('[data-section-image-preview]').waitFor();
+  await panel().getByRole('button',{name:'Duplicate',exact:true}).click();
+  const imageCopy=await panel().getAttribute('data-theme-section-id');
+  assert.ok(await frame().locator(`[data-store-editor-section="${imageCopy}"] img`).count());
   await page.getByRole('button',{name:'Open theme settings panel',exact:true}).click();
   await page.getByRole('button',{name:'Layout and motion',exact:true}).click();
-  await page.locator('[name="themePageWidth"]').evaluate(input=>{
-    input.value='1260';
-    input.dispatchEvent(new Event('input',{bubbles:true}));
-  });
-  const previewWidth=await page.locator('#store-website-preview').contentFrame().locator('body').evaluate(body=>body.style.getPropertyValue('--store-page-width'));
-  if(previewWidth!=='1260px')throw Error(`Theme setting did not update preview: ${previewWidth}`);
-
-  const desktopOverflow=await page.evaluate(()=>({
-    body:document.documentElement.scrollWidth-document.documentElement.clientWidth,
-    workspace:document.querySelector('.store-workspace').scrollWidth-document.querySelector('.store-workspace').clientWidth,
-  }));
-  if(desktopOverflow.body>1||desktopOverflow.workspace>1)throw Error(`Desktop overflow: ${JSON.stringify(desktopOverflow)}`);
-  await page.screenshot({path:`${output}/desktop.png`});
-
+  await page.locator('[name="themePageWidth"]').evaluate(input=>{input.value='1260';input.dispatchEvent(new Event('input',{bubbles:true}));});
+  assert.equal(await frame().locator('body').evaluate(body=>body.style.getPropertyValue('--store-page-width')),'1260px');
+  await page.getByRole('button',{name:'Open sections panel',exact:true}).click();
+  await page.locator('[data-home-section="banner"] > [data-store-section]').click();
+  await page.getByRole('button',{name:'Deactivate preview inspector'}).click();
+  const beforeUrl=await frame().locator('body').evaluate(()=>location.href);
+  await frame().locator('.hero-cta').click();
+  assert.equal(await frame().locator('body').evaluate(()=>location.href),beforeUrl);
+  await page.getByRole('button',{name:'Activate preview inspector'}).click();
+  if(app) {
+    await page.getByRole('button',{name:'Save',exact:true}).click();
+    await page.getByText('Draft saved',{exact:true}).waitFor();
+    await page.reload({waitUntil:'networkidle'});
+    assert.equal(await frame().locator('.store-home-hero-copy h1').textContent(),'A smoother store editor');
+    assert.equal(await frame().locator(`[data-store-editor-section="${faqId}"] summary`).first().textContent(),'How do I return an order?');
+    assert.equal(await frame().locator(`[data-store-editor-section="${imageCopy}"] img`).evaluate(img=>img.complete&&img.naturalWidth>0),true,'Duplicated image must survive save and reload');
+  }
+  await page.setViewportSize({width:1024,height:768});
+  await page.getByRole('button',{name:'Banner',exact:true}).click();
+  await checkLayout('tablet');
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('tab',{name:'Sections'}).click();
-  await page.getByRole('button',{name:'Collapsible content',exact:true}).click();
-  await page.getByRole('tab',{name:'Settings'}).click();
-  if(await page.locator('#store-section-title').textContent()!=='Collapsible content')throw Error('A newly added section cannot be reopened from navigation');
-  const mobileOverflow=await page.evaluate(()=>({
-    body:document.documentElement.scrollWidth-document.documentElement.clientWidth,
-    workspace:document.querySelector('.store-workspace').scrollWidth-document.querySelector('.store-workspace').clientWidth,
-    settings:document.querySelector('.store-settings-area').scrollWidth-document.querySelector('.store-settings-area').clientWidth,
-  }));
-  if(mobileOverflow.body>1||mobileOverflow.workspace>1||mobileOverflow.settings>1)throw Error(`Mobile overflow: ${JSON.stringify(mobileOverflow)}`);
-  await page.screenshot({path:`${output}/mobile.png`});
-
-  if(errors.length)throw Error(`Browser errors: ${errors.join(' | ')}`);
-  console.log(JSON.stringify({choices:choices.length,previewWidth,desktopOverflow,mobileOverflow,errors},null,2));
+  await checkLayout('mobile-tree');
+  await page.locator('[data-block-section="banner"][data-store-block="heading"]').click();
+  await checkLayout('mobile-settings');
+  assert.equal(await page.locator('.store-section-nav').isVisible(),false);
+  assert.equal(await page.locator('.store-preview-panel').isVisible(),false);
+  assert.equal(await page.locator('[name="bannerHeading"]').isVisible(),true);
+  await page.getByRole('tab',{name:'Preview'}).click();
+  await checkLayout('mobile-preview');
+  assert.equal(await page.locator('.store-settings-area').isVisible(),false);
+  assert.deepEqual(errors,[]);
+  console.log(JSON.stringify({passed:true,checks:['persistent tree and right inspector','preview block selection','contextual fields','instant preview updates','search and empty state','block add and reorder','DOM and FAQ state preserved','scroll preserved','undo and redo','insert at preview position','theme settings','preview navigation contained','save and reload','desktop tablet mobile layouts'],screenshots:output},null,2));
 } finally {
   await browser.close();
+  if(app)await app.stop();
 }

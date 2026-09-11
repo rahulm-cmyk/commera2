@@ -2,6 +2,7 @@ import { renderAccount, renderRecovery } from "./account.js";
 import { mountCodFormEditor } from './cod-form-editor.js';
 import { mountShippingRules } from './shipping-rules.js';
 import { clientSectionMarkup, newThemeSection, readThemeSections, readThemeSectionState, themeSectionBlock, themeSectionCatalog, themeSectionLabel, themeSectionPanel } from './store-theme-sections.js';
+import { annotateEditorPreview, createPreviewInspector, createSectionPicker, editorBlocks, reconcileElement, showEditorBlock } from './store-editor-interactions.js';
 import { overviewMarkup, setupWorkspaceSearch, setupStoreSwitcher, workspaceIcon } from './merchant-workspace.js';
 const $ = (selector) => document.querySelector(selector);
 const content = $("#content"),
@@ -1040,12 +1041,17 @@ function storeView() {
     $("#store-website-preview").focus({ preventScroll: true });
   });
   $("#store-settings-host").append(settingsGrid);
+  if(themeEditor)$('.store-editor-toolbar-start .store-editor-title').before($('.store-editor-mode-rail'));
   const storeFieldsets = () => [...$("#store-home-form").querySelectorAll(".store-editor-fieldset")];
   ["announcement", "header", "banner", "featured", "footer", "theme-css"].forEach((id, index) => { storeFieldsets()[index].dataset.storeSectionPanel = id; });
   const storeWorkspace = $(".store-workspace");
+  let previewInspector = null, selectedBlockKey = '', flushEditorHistory = () => {};
+  const expandedSections = new Set();
   const setEditorSidebar = (view, mode = view === 'apps' ? 'apps' : 'sections') => {
     if (!themeEditor || !storeWorkspace) return;
     storeWorkspace.dataset.sidebarView = view;
+    storeWorkspace.dataset.editorMode = mode;
+    storeWorkspace.dataset.inspectorOpen = String(view === 'settings');
     document.querySelectorAll('[data-store-editor-mode]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.storeEditorMode === mode)));
   };
   const setEditorTab = (tab) => {
@@ -1053,29 +1059,57 @@ function storeView() {
     storeWorkspace.dataset.mobilePanel = tab;
     document.querySelectorAll("[data-editor-tab]").forEach((button) => button.setAttribute("aria-selected", String(button.dataset.editorTab === tab)));
   };
-  const highlightStorePreviewSection = (id) => {
-    const preview = $("#store-website-preview")?.contentDocument;
-    if (!preview?.body) return;
-    let style = preview.querySelector("#commera-editor-selection-style");
-    if (!style) {
-      style = preview.createElement("style");
-      style.id = "commera-editor-selection-style";
-      style.textContent = '[data-store-editor-selected]{outline:3px solid #148a8e!important;outline-offset:-3px;position:relative}';
-      preview.head.append(style);
+  const refreshSectionTree = () => {
+    if (!themeEditor) return;
+    const form = $('#store-home-form');
+    for (const row of document.querySelectorAll('.store-section-nav [data-home-section],.store-section-nav [data-tree-section]')) {
+      const id=row.dataset.homeSection||row.dataset.treeSection, blocks=editorBlocks(id,form);
+      let toggle=row.querySelector('[data-store-expand]'),children=row.querySelector('.store-section-children');
+      if (!toggle) {
+        row.insertAdjacentHTML('afterbegin',`<button type="button" class="store-tree-toggle" data-store-expand="${id}" title="Expand ${esc(sectionInfo[id].label)}" aria-label="Expand ${esc(sectionInfo[id].label)}">${workspaceIcon('chevron-right')}</button>`);
+        toggle=row.querySelector('[data-store-expand]');
+        children=document.createElement('div');children.className='store-section-children';row.append(children);
+      }
+      const expanded=expandedSections.has(id);
+      toggle.setAttribute('aria-expanded',String(expanded));children.hidden=!expanded;
+      toggle.title=`${expanded?'Collapse':'Expand'} ${sectionInfo[id].label}`;
+      toggle.setAttribute('aria-label',toggle.title);
+      const next=document.createElement('div');next.className=children.className;next.hidden=!expanded;
+      next.innerHTML=blocks.map(block=>`<button type="button" data-store-block="${esc(block.key)}" data-block-section="${id}" draggable="${Boolean(block.row)}" title="${esc(block.label)}" class="${storeEditorSection===id&&selectedBlockKey===block.key?'active':''}" aria-current="${storeEditorSection===id&&selectedBlockKey===block.key}">${workspaceIcon(block.icon)}<span>${esc(block.label)}</span></button>`).join('');
+      const panel=form.querySelector(`[data-theme-section-id="${id}"]`);
+      if (panel?.querySelector('[data-theme-block-list]')) next.insertAdjacentHTML('beforeend',`<button type="button" class="store-tree-add-block" data-tree-add-block="${id}" ${panel.querySelectorAll('[data-theme-block]').length>=8?'disabled':''}>${workspaceIcon('plus')}<span>Add block</span></button>`);
+      reconcileElement(children,next);
     }
-    preview.querySelectorAll("[data-store-editor-selected]").forEach((element) => element.removeAttribute("data-store-editor-selected"));
-    const selected = preview.querySelector(`[data-store-editor-section="${id}"]`);
-    if (selected) selected.setAttribute("data-store-editor-selected", "");
   };
-  const showStoreSection = (id) => {
+  if (themeEditor) {
+    document.querySelectorAll('.store-section-nav .store-section-group > [data-store-section]').forEach(button=>{
+      const id=button.dataset.storeSection;if(!editorBlocks(id,$('#store-home-form')).length)return;
+      const wrapper=document.createElement('div');wrapper.className='store-static-section';wrapper.dataset.treeSection=id;
+      button.before(wrapper);wrapper.append(button);
+    });
+    $('.store-section-nav').addEventListener('click',event=>{
+      const toggle=event.target.closest('[data-store-expand]');
+      if(toggle){const id=toggle.dataset.storeExpand;expandedSections.has(id)?expandedSections.delete(id):expandedSections.add(id);refreshSectionTree();return;}
+      const block=event.target.closest('[data-store-block]');
+      if(block){showStoreSection(block.dataset.blockSection,{blockKey:block.dataset.storeBlock,scroll:true});return;}
+      const add=event.target.closest('[data-tree-add-block]');
+      if(add)$('#store-home-form').querySelector(`[data-theme-section-id="${add.dataset.treeAddBlock}"] [data-theme-block-add]`)?.click();
+    });
+  }
+  const highlightStorePreviewSection = (id) => previewInspector?.select(id,selectedBlockKey);
+  const showStoreSection = (id, {blockKey='',scroll=false} = {}) => {
+    if(id!==storeEditorSection||blockKey!==selectedBlockKey)flushEditorHistory();
     const selected = sectionInfo[id] || sectionInfo.banner;
     storeEditorSection = sectionInfo[id] ? id : 'banner';
-    $("#store-section-title").textContent = selected.label;
-    $("#store-section-scope").textContent = selected.scope;
+    const block=editorBlocks(storeEditorSection,$('#store-home-form')).find(item=>item.key===blockKey);
+    selectedBlockKey=block?.key||'';
+    $("#store-section-title").textContent = block?.label||selected.label;
+    $("#store-section-scope").textContent = block?selected.label:selected.scope;
     $("#store-identity-form").hidden = id !== "identity";
     $("#store-home-form").hidden = ["identity", "connections"].includes(id);
     $("#store-connections").hidden = id !== "connections";
     storeFieldsets().forEach((fieldset) => { fieldset.hidden = fieldset.dataset.storeSectionPanel !== storeEditorSection; });
+    showEditorBlock($(`[data-store-section-panel="${storeEditorSection}"]`),block);
     document.querySelectorAll("[data-store-section]").forEach((button) => {
       button.classList.toggle("active", button.dataset.storeSection === id);
       button.setAttribute("aria-current", button.dataset.storeSection === id ? "true" : "false");
@@ -1085,9 +1119,12 @@ function storeView() {
       const mode=['identity','theme-settings','theme-css'].includes(id) ? 'theme' : id === 'connections' ? 'apps' : 'sections';
       storeWorkspace.dataset.settingsReturn=mode;
       setEditorSidebar('settings',mode);
+      expandedSections.add(storeEditorSection);
+      refreshSectionTree();
+      $('.store-settings-area').scrollTop=0;
     }
     if (themeEditor && innerWidth < 800) setEditorTab("settings");
-    highlightStorePreviewSection(id);
+    previewInspector?.select(storeEditorSection,selectedBlockKey,scroll);
   };
   document.querySelectorAll("[data-editor-tab]").forEach((button) => { button.onclick = () => {
     if (button.dataset.editorTab === 'sections') setEditorSidebar('sections');
@@ -1095,10 +1132,15 @@ function storeView() {
     setEditorTab(button.dataset.editorTab);
   }; });
   $(".store-settings-back")?.addEventListener('click', () => {
+    if(selectedBlockKey){showStoreSection(storeEditorSection);return;}
     const target=storeWorkspace.dataset.settingsReturn||'sections';
     setEditorSidebar(target,target);
     if (innerWidth < 800) setEditorTab('sections');
   });
+  if (themeEditor) {
+    $('.store-section-heading').insertAdjacentHTML('beforeend',`<button type="button" class="icon-button store-settings-close" title="Close settings" aria-label="Close settings">${workspaceIcon('x')}</button>`);
+    $('.store-settings-close').onclick=()=>{setEditorSidebar(storeWorkspace.dataset.settingsReturn||'sections',storeWorkspace.dataset.settingsReturn||'sections');previewInspector?.select('');if(innerWidth<=800)setEditorTab('sections');};
+  }
   document.querySelectorAll('[data-store-editor-mode]').forEach(button => { button.onclick = () => {
     const mode=button.dataset.storeEditorMode;
     if(mode==='sections')setEditorSidebar('sections','sections');
@@ -1110,9 +1152,9 @@ function storeView() {
     $(".store-editor-more")?.removeAttribute("open");
     showStoreSection("theme-css");
   });
-  document.querySelectorAll("[data-store-section]").forEach((button) => { button.onclick = () => showStoreSection(button.dataset.storeSection); });
+  document.querySelectorAll("[data-store-section]").forEach((button) => { if(!button.closest('.store-home-section-list'))button.onclick = () => showStoreSection(button.dataset.storeSection,{scroll:true}); });
   showStoreSection(storeEditorSection);
-  if (themeEditor) setEditorSidebar('sections','sections');
+  if (themeEditor) {setEditorSidebar('sections','sections');setEditorTab('sections');}
   const previewFrame = $("#store-website-preview");
   const previewContainer = $('#store-preview-frame');
   let storeInspectorEnabled = true;
@@ -1121,14 +1163,13 @@ function storeView() {
     event.currentTarget.setAttribute('aria-pressed',String(storeInspectorEnabled));
     event.currentTarget.title=storeInspectorEnabled?'Deactivate preview inspector':'Activate preview inspector';
     event.currentTarget.setAttribute('aria-label',event.currentTarget.title);
-    if(!storeInspectorEnabled)previewFrame.contentDocument?.querySelectorAll('[data-store-editor-selected]').forEach(element=>element.removeAttribute('data-store-editor-selected'));
-    else highlightStorePreviewSection(storeEditorSection);
+    previewInspector?.refresh();
   });
   if (themeEditor && innerWidth <= 800) previewContainer.classList.add('is-mobile');
   const sizeStorePreview = () => {
-    const width = previewContainer.classList.contains('is-mobile') ? 390 : 1100;
     const available = previewContainer.clientWidth;
     if (!available) return;
+    const width = previewContainer.classList.contains('is-mobile') ? 390 : Math.max(1024,available);
     const scale = Math.min(1, available / width);
     previewFrame.style.width = `${width}px`;
     previewFrame.style.maxWidth = 'none';
@@ -1172,10 +1213,8 @@ function storeView() {
       headerElement.classList.toggle("is-sticky", form.elements.headerSticky.checked);
       let links = [];
       try { links = readStoreMenuLinks(form); } catch {}
-      if (links.length) {
-        const markup = links.map((link) => `<a href="${esc(link.url)}">${esc(link.label)}</a>`).join("");
-        headerElement.querySelectorAll("nav").forEach((nav) => { nav.innerHTML = markup; });
-      }
+      const markup = links.length ? links.map((link) => `<a href="${esc(link.url)}">${esc(link.label)}</a>`).join("") : `<a href="/s/${esc(data.store.slug)}">Home</a><a href="#products">Products</a>`;
+      headerElement.querySelectorAll("nav").forEach((nav) => { if(nav.innerHTML!==markup)nav.innerHTML=markup; });
     }
 
     let announcementElement = preview.querySelector(".store-announcement");
@@ -1254,35 +1293,34 @@ function storeView() {
       for(const section of sections) {
         const template=preview.createElement('template');template.innerHTML=clientSectionMarkup(section,esc);
         const fresh=template.content.firstElementChild,current=contentElement.querySelector(`[data-store-editor-section="${section.id}"]`);
-        if(current)current.replaceWith(fresh);else contentElement.append(fresh);
+        if(current)reconcileElement(current,fresh);else contentElement.append(fresh);
       }
       let order = ["banner", "featured"];
       try { order = JSON.parse(form.elements.homeSectionOrder.value); } catch {}
-      order.forEach((id) => {
+      order.forEach((id,index) => {
         const section = preview.querySelector(`[data-store-editor-section="${id}"]`);
-        if (section) contentElement.append(section);
+        if (section && contentElement.children[index]!==section) contentElement.insertBefore(section,contentElement.children[index]||null);
       });
     }
     let customStyle = preview.querySelector("#commera-theme-custom-style");
     if (!customStyle) { customStyle = preview.createElement("style"); customStyle.id = "commera-theme-custom-style"; preview.head.append(customStyle); }
     const css = form.elements.customCss.value;
-    customStyle.textContent = /<\/?style\b|@import\b|(?:url|image-set)\s*\(|expression\s*\(|behavior\s*:|-moz-binding\s*:/i.test(css) ? "" : css;
+    const validCss=/<\/?style\b|@import\b|(?:url|image-set)\s*\(|expression\s*\(|behavior\s*:|-moz-binding\s*:/i.test(css) ? "" : css;
+    if(customStyle.textContent!==validCss)customStyle.textContent=validCss;
+    annotateEditorPreview(preview,form);
     highlightStorePreviewSection(storeEditorSection);
   };
-  // In the editor, preview clicks select settings rather than running checkout.
+  previewInspector=createPreviewInspector(previewFrame,{
+    enabled:()=>storeInspectorEnabled,
+    select:(id,blockKey)=>showStoreSection(id,{blockKey}),
+    addSection:(after,anchor)=>openThemeSectionPicker(after,anchor),
+    label:(id,key)=>editorBlocks(id,$('#store-home-form')).find(block=>block.key===key)?.label||sectionInfo[id]?.label||'',
+  });
   const wireStorePreview = () => {
     const preview = previewFrame.contentDocument;
     if (!preview?.body) return;
+    previewInspector.mount();
     syncStorePreview();
-    preview.addEventListener("submit", (event) => { event.preventDefault(); event.stopImmediatePropagation(); }, true);
-    preview.addEventListener("click", (event) => {
-      if (!storeInspectorEnabled) return;
-      event.preventDefault();
-      event.stopImmediatePropagation();
-      const target = event.target;
-      const section = target.closest?.("[data-store-editor-section]");
-      if (section) showStoreSection(section.dataset.storeEditorSection);
-    }, true);
     highlightStorePreviewSection(storeEditorSection);
   };
   previewFrame.addEventListener("load", wireStorePreview);
@@ -1419,10 +1457,10 @@ function storeView() {
       body: JSON.stringify(payload),
     });
   };
-  let identityDirty = false, homeDirty = false, saving = false;
+  let identityDirty = false, homeDirty = false, saving = false, identityRevision = 0, homeRevision = 0;
   const updateEditorStatus = (message) => {
     const element = $("#store-editor-status");
-    if (element) element.textContent = message;
+    if (element) {element.textContent = message;element.dataset.state=/failed/i.test(message)?'error':/unsaved/i.test(message)?'unsaved':/saving/i.test(message)?'saving':'saved';}
   };
   const showStoreSaveError = (error) => {
     const status = $("#store-save-error");
@@ -1433,17 +1471,20 @@ function storeView() {
   const saveStoreDraft = async () => {
     if (saving) return false;
     saving = true;
+    const savingIdentityRevision=identityRevision,savingHomeRevision=homeRevision;
     updateEditorStatus("Saving...");
     $("#store-save-error").hidden = true;
     try {
       if (identityDirty) await saveIdentity();
       if (homeDirty) await saveHome();
       data = await api(`/api/stores/${storeId}/dashboard`);
-      identityDirty = homeDirty = productPageDirty = false;
-      updateEditorStatus("Draft saved");
+      identityDirty = identityRevision !== savingIdentityRevision;
+      homeDirty = homeRevision !== savingHomeRevision;
+      productPageDirty = identityDirty || homeDirty;
+      updateEditorStatus(productPageDirty ? "Unsaved changes" : "Draft saved");
       const editorSave = document.querySelector('[data-store-save-all]');
-      if (editorSave) editorSave.disabled = true;
-      return true;
+      if (editorSave) editorSave.disabled = !productPageDirty;
+      return !productPageDirty;
     } catch (error) { updateEditorStatus("Save failed"); showStoreSaveError(error); return false; }
     finally { saving = false; }
   };
@@ -1474,12 +1515,13 @@ function storeView() {
     clearTimeout(historyTimer);
     historyTimer = setTimeout(recordEditorHistory, 180);
   };
+  flushEditorHistory = () => {clearTimeout(historyTimer);recordEditorHistory();};
   const updateHomeSectionNavigation = () => {
     const list = $(".store-home-section-list");
     if (!list) return;
     let order = ["banner", "featured",...readThemeSectionState(homeForm).map(section=>section.id)];
     try { order = JSON.parse(homeForm.elements.homeSectionOrder.value); } catch {}
-    order.forEach((id) => { const row = list.querySelector(`[data-home-section="${id}"]`); if (row) list.append(row); });
+    order.forEach((id,index) => { const row = list.querySelector(`[data-home-section="${id}"]`); if (row&&list.children[index]!==row) list.insertBefore(row,list.children[index]||null); });
     [...list.children].forEach((row, index, rows) => {
       row.draggable = true;
       row.querySelector('[data-section-move="up"]').disabled = index === 0;
@@ -1503,7 +1545,8 @@ function storeView() {
   };
   const sectionList = $(".store-home-section-list");
   if (sectionList) {
-    let draggedSection = null;
+    let draggedSection = null, draggedTreeBlock = null, treeDropTarget = null, treeDropAfter = false;
+    const clearTreeDrop = () => {sectionList.querySelectorAll('.is-block-drop-target').forEach(node=>node.classList.remove('is-block-drop-target'));treeDropTarget=null;};
     sectionList.onclick = (event) => {
       const visibility = event.target.closest("[data-store-visibility]");
       if (visibility) {
@@ -1524,30 +1567,48 @@ function storeView() {
         return;
       }
       const sectionButton = event.target.closest("[data-store-section]");
-      if (sectionButton) showStoreSection(sectionButton.dataset.storeSection);
+      if (sectionButton) showStoreSection(sectionButton.dataset.storeSection,{scroll:true});
     };
-    sectionList.ondragstart = (event) => { draggedSection = event.target.closest("[data-home-section]"); event.dataTransfer.effectAllowed = "move"; };
-    sectionList.ondragover = (event) => { event.preventDefault(); const row = event.target.closest("[data-home-section]"); if (draggedSection && row && row !== draggedSection) sectionList.insertBefore(draggedSection, row.getBoundingClientRect().top + row.offsetHeight / 2 < event.clientY ? row.nextSibling : row); };
-    sectionList.ondrop = (event) => { event.preventDefault(); if (draggedSection) commitSectionOrder(); draggedSection = null; };
-    sectionList.ondragend = () => { draggedSection = null; };
+    sectionList.ondragstart = (event) => {
+      const button=event.target.closest('[data-store-block]');
+      if(button){const block=editorBlocks(button.dataset.blockSection,homeForm).find(item=>item.key===button.dataset.storeBlock);if(!block?.row){event.preventDefault();return;}draggedTreeBlock=block.row;}
+      else draggedSection=event.target.closest('[data-home-section]');
+      event.dataTransfer.effectAllowed='move';
+    };
+    sectionList.ondragover = (event) => {
+      event.preventDefault();
+      if(draggedTreeBlock){
+        clearTreeDrop();
+        const button=event.target.closest('[data-store-block]');
+        if(button){const target=editorBlocks(button.dataset.blockSection,homeForm).find(item=>item.key===button.dataset.storeBlock)?.row;if(target&&target!==draggedTreeBlock&&target.parentElement===draggedTreeBlock.parentElement){treeDropTarget=target;treeDropAfter=button.getBoundingClientRect().top+button.offsetHeight/2<event.clientY;button.classList.add('is-block-drop-target');}}
+        return;
+      }
+      const row=event.target.closest('[data-home-section]');
+      if(draggedSection&&row&&row!==draggedSection)sectionList.insertBefore(draggedSection,row.getBoundingClientRect().top+row.offsetHeight/2<event.clientY?row.nextSibling:row);
+    };
+    sectionList.ondrop = (event) => {
+      event.preventDefault();
+      if(draggedTreeBlock&&treeDropTarget){const row=draggedTreeBlock,panel=row.closest('[data-theme-section-id]');row.parentElement.insertBefore(row,treeDropAfter?treeDropTarget.nextSibling:treeDropTarget);updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId,{blockKey:`block-${[...row.parentElement.children].indexOf(row)}`});}
+      if(draggedSection)commitSectionOrder();
+      draggedSection=draggedTreeBlock=null;clearTreeDrop();
+    };
+    sectionList.ondragend = () => {if(draggedSection)updateHomeSectionNavigation();draggedSection=draggedTreeBlock=null;clearTreeDrop();};
     updateHomeSectionNavigation();
   }
   const addThemeSection = (section,afterId='') => {
+    if(readThemeSectionState(homeForm).length>=12)return toast('A homepage can contain up to 12 custom sections');
     sectionInfo[section.id]={label:themeSectionLabel(section.type),scope:'Homepage section'};
     const hiddenOrder=homeForm.elements.homeSectionOrder;
     hiddenOrder.insertAdjacentHTML('beforebegin',themeSectionPanel(section,esc,workspaceIcon));
     const rowHtml=sectionRow(section.id),afterRow=afterId&&sectionList.querySelector(`[data-home-section="${afterId}"]`);
     if(afterRow)afterRow.insertAdjacentHTML('afterend',rowHtml);else sectionList.insertAdjacentHTML('beforeend',rowHtml);
+    updateThemeBlockControls(homeForm.querySelector(`[data-theme-section-id="${section.id}"]`));
     commitSectionOrder();
     homeForm.dispatchEvent(new Event('input',{bubbles:true}));
-    showStoreSection(section.id);
+    showStoreSection(section.id,{scroll:true});
   };
-  const openThemeSectionPicker = () => {
-    modalContent.innerHTML=`<div class="theme-section-picker"><h2>Add section</h2><p>Choose the content you want to add to this page.</p><div>${themeSectionCatalog.map(item=>`<button type="button" data-add-theme-section="${item.type}">${workspaceIcon(item.icon)}<span><strong>${esc(item.label)}</strong><small>${esc(item.description)}</small></span>${workspaceIcon('plus')}</button>`).join('')}</div></div>`;
-    syncModalAccessibleName();modal.showModal();
-    modalContent.querySelectorAll('[data-add-theme-section]').forEach(button=>button.onclick=()=>{const section=newThemeSection(button.dataset.addThemeSection);modal.close();addThemeSection(section);});
-  };
-  $("#store-add-section")?.addEventListener("click", openThemeSectionPicker);
+  const openThemeSectionPicker = createSectionPicker(storeWorkspace,{catalog:themeSectionCatalog,icon:workspaceIcon,escape:esc,choose:(type,after)=>addThemeSection(newThemeSection(type),after)});
+  $("#store-add-section")?.addEventListener("click", () => openThemeSectionPicker());
 
   const updateThemeBlockControls = panel => {
     const blocks=[...panel.querySelectorAll('[data-theme-block]')];
@@ -1556,14 +1617,15 @@ function storeView() {
       block.querySelector('[data-theme-block-move="up"]').disabled=index===0;
       block.querySelector('[data-theme-block-move="down"]').disabled=index===blocks.length-1;
     });
+    const add=panel.querySelector('[data-theme-block-add]');if(add)add.disabled=blocks.length>=8;
   };
   homeForm.querySelectorAll('[data-theme-section-id]').forEach(updateThemeBlockControls);
   homeForm.addEventListener('click',async event=>{
     const panel=event.target.closest('[data-theme-section-id]');if(!panel)return;
     const block=event.target.closest('[data-theme-block]'),move=event.target.closest('[data-theme-block-move]');
-    if(move&&block){if(move.dataset.themeBlockMove==='up'&&block.previousElementSibling)block.parentElement.insertBefore(block,block.previousElementSibling);if(move.dataset.themeBlockMove==='down'&&block.nextElementSibling)block.parentElement.insertBefore(block.nextElementSibling,block);updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));return;}
-    if(event.target.closest('[data-theme-block-remove]')){block?.remove();updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));return;}
-    if(event.target.closest('[data-theme-block-add]')){const type=panel.dataset.themeSectionType,list=panel.querySelector('[data-theme-block-list]');if(list.children.length>=8)return toast('A section can contain up to 8 blocks');const initial=type==='benefits'?{heading:'Benefit',text:'Explain why this matters.'}:type==='testimonials'?{quote:'Add a genuine customer quote.',name:'Customer name'}:{question:'Common question',answer:'Add a clear answer.'};list.insertAdjacentHTML('beforeend',themeSectionBlock(type,initial,esc,workspaceIcon));updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));return;}
+    if(move&&block){if(move.dataset.themeBlockMove==='up'&&block.previousElementSibling)block.parentElement.insertBefore(block,block.previousElementSibling);if(move.dataset.themeBlockMove==='down'&&block.nextElementSibling)block.parentElement.insertBefore(block.nextElementSibling,block);updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId,{blockKey:`block-${[...block.parentElement.children].indexOf(block)}`});return;}
+    if(event.target.closest('[data-theme-block-remove]')){block?.remove();updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId);return;}
+    if(event.target.closest('[data-theme-block-add]')){const type=panel.dataset.themeSectionType,list=panel.querySelector('[data-theme-block-list]');if(list.children.length>=8)return toast('A section can contain up to 8 blocks');const initial=type==='benefits'?{heading:'Benefit',text:'Explain why this matters.'}:type==='testimonials'?{quote:'Add a genuine customer quote.',name:'Customer name'}:{question:'Common question',answer:'Add a clear answer.'};list.insertAdjacentHTML('beforeend',themeSectionBlock(type,initial,esc,workspaceIcon));updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId,{blockKey:`block-${list.children.length-1}`,scroll:true});return;}
     if(event.target.closest('[data-section-image-remove]')){panel.dataset.themeSectionImage='null';panel.dataset.themeSectionImageRemoved='true';panel.querySelector('[data-section-image]').value='';panel.querySelector('.theme-section-image').innerHTML='<span data-section-image-placeholder>Add an image</span>';event.target.closest('[data-section-image-remove]').hidden=true;homeForm.dispatchEvent(new Event('input',{bubbles:true}));return;}
     if(event.target.closest('[data-theme-section-remove]')){const id=panel.dataset.themeSectionId;panel.remove();sectionList.querySelector(`[data-home-section="${id}"]`)?.remove();delete sectionInfo[id];commitSectionOrder();showStoreSection('banner');return;}
     if(event.target.closest('[data-theme-section-duplicate]')){const source=readThemeSectionState(homeForm).find(section=>section.id===panel.dataset.themeSectionId),copy=structuredClone(source);copy.id=`section-${crypto.randomUUID().toLowerCase()}`;copy.heading=`${copy.heading} copy`.slice(0,160);addThemeSection(copy,source.id);}
@@ -1577,8 +1639,8 @@ function storeView() {
   homeForm.addEventListener('drop',event=>{if(!draggedThemeBlock)return;event.preventDefault();const panel=draggedThemeBlock.closest('[data-theme-section-id]');draggedThemeBlock.classList.remove('is-dragging');draggedThemeBlock=null;updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));});
   homeForm.addEventListener('dragend',()=>{draggedThemeBlock?.classList.remove('is-dragging');draggedThemeBlock=null;});
   const markStoreDirty = (kind) => {
-    if (kind === "identity") identityDirty = true;
-    else homeDirty = true;
+    if (kind === "identity") {identityDirty = true;identityRevision+=1;}
+    else {homeDirty = true;homeRevision+=1;}
     productPageDirty = true;
     productPageSaveHandler = saveStoreDraft;
     updateEditorStatus("Unsaved changes");
@@ -1588,11 +1650,15 @@ function storeView() {
     for(const [output,name] of Object.entries(ranges)){const label=homeForm.querySelector(`[data-range-output="${output}"]`);if(label)label.textContent=`${homeForm.elements[name].value} px`;}
     syncTarget();
     syncStorePreview();
+    updateHomeSectionNavigation();
+    refreshSectionTree();
+    const selectedBlock=editorBlocks(storeEditorSection,homeForm).find(block=>block.key===selectedBlockKey);
+    if(selectedBlock)$('#store-section-title').textContent=selectedBlock.label;
     scheduleEditorHistory();
   };
   identityForm.oninput = () => markStoreDirty("identity");
   homeForm.oninput = () => markStoreDirty("home");
-  homeForm.addEventListener("store-preview-image", syncStorePreview);
+  homeForm.addEventListener("store-preview-image", () => markStoreDirty('home'));
   const restoreEditorHistory = (index) => {
     const snapshot = editorHistory[index];
     if (!snapshot) return;
@@ -1611,12 +1677,14 @@ function storeView() {
     setupStoreEditorControls(homeForm);
     editorHistoryIndex = index;
     identityDirty = homeDirty = productPageDirty = true;
+    identityRevision+=1;homeRevision+=1;
     productPageSaveHandler = saveStoreDraft;
     updateEditorStatus("Unsaved changes");
     const editorSave = document.querySelector('[data-store-save-all]');
     if (editorSave) editorSave.disabled = false;
     syncTarget();
     updateHomeSectionNavigation();
+    showStoreSection(sectionInfo[storeEditorSection]?storeEditorSection:'banner',{blockKey:selectedBlockKey});
     syncStorePreview();
     updateHistoryButtons();
     restoringHistory = false;

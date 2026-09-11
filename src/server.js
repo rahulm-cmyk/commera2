@@ -4044,6 +4044,7 @@ export function createApp({
           "/cod-form-editor.js": "cod-form-editor.js",
           "/shipping-rules.js": "shipping-rules.js",
           "/store-theme-sections.js": "store-theme-sections.js",
+          "/store-editor-interactions.js": "store-editor-interactions.js",
           "/cod-checkout-builder.js": "cod-checkout-builder.js",
           "/cod-form-launcher.js": "cod-form-launcher.js",
           "/account.js": "account.js",
