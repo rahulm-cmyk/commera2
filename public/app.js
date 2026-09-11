@@ -5069,7 +5069,7 @@ function policiesView() {
     policyTab === "rules"
       ? "Configure the operational rules applied to real orders."
       : "Edit and publish customer-facing policy content.",
-    '<button class="secondary" id="back-to-policies">← Policy</button>',
+    '<button class="secondary" id="back-to-policies">← Store policies</button>',
   );
   if (policyTab === 'rules') policyRulesView();
   else writtenPoliciesView(policyTab === 'contact');
@@ -5078,15 +5078,15 @@ function policiesView() {
 function policyOverviewView() {
   const written = data.policies.written || [];
   setPageHeader(
-    "Choose a policy to configure. Published policies appear on connected storefronts.",
-    '<button class="primary" id="manage-written-policy">Manage Written Policy</button>',
+    "Manage your store policies.",
+    '<button class="primary" id="manage-written-policy">Manage policies</button>',
   );
   content.innerHTML = `<section class="panel policy-list">${written.map((policy) => `<button class="policy-list-item edit-policy-overview" data-type="${policy.type}"><span><strong>${esc(policy.label)}</strong><small>${policy.status === "published" ? "Published" : policy.status === "draft" ? "Draft" : "Not configured"}</small></span><b>›</b></button>`).join("")}</section><section class="panel policy-list"><h3>Additional settings</h3><button class="policy-list-item" id="open-policy-rules"><span><strong>Return & Cancellation Rules</strong><small>Operational eligibility, windows, and charges</small></span><b>›</b></button><button class="policy-list-item" id="open-contact-information"><span><strong>Contact Information</strong><small>Manage business contact details separately</small></span><b>›</b></button></section>`;
   $("#open-policy-rules").onclick = () => navigateTo("/policy/rules");
   $('#manage-written-policy').onclick = () => navigateTo('/policy/written');
   $('#open-contact-information').onclick = () => navigateTo('/policy/contact');
   if (!written.some(policy => policy.status === 'published')) {
-    content.insertAdjacentHTML('afterbegin', '<p class="notice" role="status">No policy is published yet. Add your content, then open Manage Written Policy to preview and publish it. Only published policy links appear on your store.</p>');
+    content.insertAdjacentHTML('afterbegin', '<p class="notice" role="status">No policies published yet. Published policies appear on your store.</p>');
   }
   document.querySelectorAll(".edit-policy-overview").forEach(
     (button) =>
@@ -5207,7 +5207,7 @@ function writtenPoliciesView(contactOnly = false) {
         : status === "draft"
           ? "Draft"
           : "Published";
-  content.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>${contactOnly ? 'Contact Information' : 'Written Policy'}</h2><span>Customer-facing policy content; separate from operational settings.</span></div></div><table><thead><tr><th>POLICY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>${written.map((policy) => `<tr><td><strong>${esc(policy.label)}</strong></td><td><span class="pill">${statusLabel(policy.status)}</span></td><td><button class="secondary edit-written-policy" data-type="${policy.type}">Edit</button> <button class="secondary preview-written-policy" data-type="${policy.type}" ${policy.status === "no_policy" ? "disabled" : ""}>Preview</button> <button class="primary publish-written-policy" data-type="${policy.type}" ${policy.status === "no_policy" ? "disabled" : ""}>Publish</button>${policy.status === "published" ? ` <button class="secondary unpublish-written-policy" data-type="${policy.type}">Move to Draft</button>` : ""}</td></tr>`).join("")}</tbody></table></section>`;
+  content.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>${contactOnly ? 'Contact Information' : 'Store policies'}</h2><span>${contactOnly ? "Your business contact details." : "Your return, privacy, shipping, and other store policies."}</span></div></div><table><thead><tr><th>POLICY</th><th>STATUS</th><th>ACTIONS</th></tr></thead><tbody>${written.map((policy) => `<tr><td><strong>${esc(policy.label)}</strong></td><td><span class="pill">${statusLabel(policy.status)}</span></td><td><button class="secondary edit-written-policy" data-type="${policy.type}">Edit</button> <button class="secondary preview-written-policy" data-type="${policy.type}" ${policy.status === "no_policy" ? "disabled" : ""}>Preview</button> <button class="primary publish-written-policy" data-type="${policy.type}" ${policy.status === "no_policy" ? "disabled" : ""}>Publish</button>${policy.status === "published" ? ` <button class="secondary unpublish-written-policy" data-type="${policy.type}">Move to Draft</button>` : ""}</td></tr>`).join("")}</tbody></table></section>`;
   document
     .querySelectorAll(".edit-written-policy")
     .forEach(

@@ -11,6 +11,6 @@ test('Policy overview exposes written content publishing and explains missing st
   assert.match(overview, /id="manage-written-policy"/);
   assert.match(overview, /navigateTo\('\/policy\/written'\)/);
   assert.match(overview, /!written.some\(policy => policy.status === 'published'\)/);
-  assert.match(overview, /No policy is published yet/);
+  assert.match(overview, /No policies published yet/);
   assert.doesNotMatch(overview, /method:\s*['"]POST/);
 });
