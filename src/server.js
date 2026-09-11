@@ -21,6 +21,7 @@ import { ReviewService } from "./review-service.js";
 import { ReviewImportService } from "./review-import-service.js";
 import { PolicyService } from "./policy-service.js";
 import { StorefrontService } from "./storefront-service.js";
+import { renderCustomSection } from './theme-sections.js';
 import { OnlineStoreService } from './online-store-service.js';
 import { createStorePreviewTokens } from './store-preview-token.js';
 import { renderStoreChrome } from "./store-site-layout.js";
@@ -895,6 +896,8 @@ function storefrontHomePage({ storefront: model, writtenPolicies = [], preferenc
   );
 
   const { announcement, header, footer: policyFooter, favicon, style } = renderStoreChrome(model, writtenPolicies);
+  const theme=home.themeSettings||{};
+  const themeStyle=`${style}--store-page-width:${Number(theme.pageWidth||1200)}px;--store-section-spacing:${Number(theme.sectionSpacing||64)}px;--store-button-radius:${Number(theme.buttonRadius??8)}px;--store-card-radius:${Number(theme.cardRadius??8)}px;--store-product-columns:${Number(theme.productColumns||3)};`;
 
   const bannerImage = home.banner?.dataUrl
     ? `<img class="store-home-banner" src="${home.banner.dataUrl}" alt="${htmlEscape(heading)}">`
@@ -936,10 +939,11 @@ function storefrontHomePage({ storefront: model, writtenPolicies = [], preferenc
     banner: `<section class="store-home-hero" data-store-editor-section="banner" ${home.bannerVisible === false ? "hidden" : ""}>${bannerImage}<div class="store-home-hero-copy"><span class="eyebrow">${htmlEscape(store.name || "")}</span>${heading ? `<h1>${htmlEscape(heading)}</h1>` : ""}${subheading ? `<p>${htmlEscape(subheading)}</p>` : ""}${buttonHtml}</div></section>`,
     featured: `<section class="store-home-products" id="products" data-store-editor-section="featured" ${home.featuredVisible === false ? "hidden" : ""}><h2>${sectionHeading}</h2><div class="featured-grid">${featured || "<p>No featured products are published yet.</p>"}</div></section>`,
   };
+  for(const section of home.customSections||[])sections[section.id]=renderCustomSection(section,htmlEscape);
   const sectionHtml = (home.sectionOrder || ["banner", "featured"]).map((key) => sections[key] || "").join("");
   const customCss = home.customCss ? `<style id="commera-theme-custom-style">${home.customCss}</style>` : "";
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(preferences.title || store.name || "")}</title><meta name="description" content="${htmlEscape(preferences.description || "")}">${favicon}<link rel="stylesheet" href="/store.css">${customCss}</head><body class="storefront-site store-site-shell" style="${style}">${announcement}${header}<main class="storefront-home" data-status="${homeStatus}"><div class="storefront-home-content">${sectionHtml}</div></main>${policyFooter}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(preferences.title || store.name || "")}</title><meta name="description" content="${htmlEscape(preferences.description || "")}">${favicon}<link rel="stylesheet" href="/store.css">${customCss}</head><body class="storefront-site store-site-shell${theme.animations===false?' store-motion-disabled':''}" style="${themeStyle}">${announcement}${header}<main class="storefront-home" data-status="${homeStatus}"><div class="storefront-home-content">${sectionHtml}</div></main>${policyFooter}</body></html>`;
 }
 
 function thankYouPage(
@@ -4039,6 +4043,7 @@ export function createApp({
           "/app.js": "app.js",
           "/cod-form-editor.js": "cod-form-editor.js",
           "/shipping-rules.js": "shipping-rules.js",
+          "/store-theme-sections.js": "store-theme-sections.js",
           "/cod-checkout-builder.js": "cod-checkout-builder.js",
           "/cod-form-launcher.js": "cod-form-launcher.js",
           "/account.js": "account.js",

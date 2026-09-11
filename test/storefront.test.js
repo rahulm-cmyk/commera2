@@ -467,6 +467,25 @@ test("homepage editor persists section visibility, ordering, and safe custom CSS
   assert.match(r.body.error, /section order is invalid/i);
 });
 
+test('Shopify-style custom sections, blocks and theme settings persist and publish in order',async t=>{
+  const app=createApp({db:createDatabase(':memory:'),port:0});await app.start();t.after(()=>app.stop());
+  const base=`http://127.0.0.1:${app.port}`,main=await setup(base,'section-builder'),path=`/api/stores/${main.store.id}/storefront`;
+  await call(base,`${path}/branding`,'PATCH',{logo:png});
+  const sections=[
+    {id:'section-richtext-001',type:'rich-text',visible:true,heading:'Our promise',text:'Simple everyday care.',alignment:'center',colorScheme:'accent',fullWidth:true,buttonText:'Learn more',buttonUrl:'#products'},
+    {id:'section-benefits-001',type:'benefits',visible:true,heading:'Why choose us',text:'',alignment:'left',colorScheme:'default',fullWidth:false,blocks:[{heading:'Fast delivery',text:'Packed with care.'},{heading:'Easy COD',text:'Pay at your door.'}]},
+    {id:'section-faqs-001',type:'faq',visible:true,heading:'Questions',text:'Useful answers.',alignment:'left',colorScheme:'default',fullWidth:false,blocks:[{question:'How long?',answer:'Three to five days.'}]},
+  ];
+  let r=await call(base,`${path}/home`,'PATCH',{bannerVisible:false,featuredVisible:false,customSections:sections,sectionOrder:['section-richtext-001','banner','section-benefits-001','featured','section-faqs-001'],themeSettings:{pageWidth:1320,sectionSpacing:72,buttonRadius:12,cardRadius:6,productColumns:4,animations:false}});
+  assert.equal(r.response.status,200,JSON.stringify(r.body));assert.equal(r.body.customSections.length,3);assert.equal(r.body.themeSettings.pageWidth,1320);
+  r=await call(base,`${path}/home/publish`,'POST',{});assert.equal(r.response.status,200,JSON.stringify(r.body));
+  r=await call(base,`/s/${main.store.slug}`);assert.equal(r.response.status,200);assert.match(r.body,/Our promise/);assert.match(r.body,/Fast delivery/);assert.match(r.body,/Three to five days/);assert.match(r.body,/--store-page-width:1320px/);assert.match(r.body,/store-motion-disabled/);
+  assert.ok(r.body.indexOf('section-richtext-001')<r.body.indexOf('section-benefits-001'));
+  r=await call(base,`${path}/home`,'PATCH',{customSections:[sections[0],{...sections[0]}]});assert.equal(r.response.status,400);assert.match(r.body.error,/section ID/i);
+  r=await call(base,`${path}/home`,'PATCH',{customSections:[{...sections[0],buttonUrl:'javascript:alert(1)'}]});assert.equal(r.response.status,400);assert.match(r.body.error,/Section links/i);
+  r=await call(base,`${path}/home`,'PATCH',{customSections:[{id:'section-image-001',type:'image-with-text',visible:true,heading:'Image',text:'',alignment:'left',colorScheme:'default',fullWidth:false,imagePosition:'left',buttonText:'',buttonUrl:'',image:{name:'fake.svg',type:'image/svg+xml',dataUrl:'data:image/svg+xml;base64,PHN2Zz4='}}]});assert.equal(r.response.status,400);assert.match(r.body.error,/upload is invalid/i);
+});
+
 test("universal page uses store currency and never publishes invented media, bundles, or social proof", async (t) => {
   const app = createApp({ db: createDatabase(":memory:"), port: 0 });
   await app.start();

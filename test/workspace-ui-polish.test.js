@@ -57,7 +57,8 @@ test('homepage theme editor keeps every visible action functional on desktop and
   assert.match(editor, /button\.href = href/);
   assert.match(editor, /showStoreSection\("connections"\)/);
   assert.match(editor, /setEditorTab\("sections"\)/);
-  assert.match(editor, /All sections added/);
+  assert.match(editor, /Add section/);
+  assert.match(editor, /themeSectionCatalog/);
   assert.match(css, /#store-editor-primary-actions \{[\s\S]*?position:fixed;[\s\S]*?grid-template-columns:repeat\(2,minmax\(0,1fr\)\)/);
   assert.match(css, /:is\(#store-editor-undo,#store-editor-redo\) \{[\s\S]*?position:fixed;[\s\S]*?display:grid/);
   assert.match(css, /\.store-section-move,[\s\S]*?display:grid;[\s\S]*?grid-column:3\/5/);

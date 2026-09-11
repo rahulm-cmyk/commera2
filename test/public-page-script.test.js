@@ -20,7 +20,7 @@ test('published product page and dedicated checkout emit executable scripts', as
   await app.start();
   t.after(() => app.stop());
   const base = `http://127.0.0.1:${app.port}`;
-  for (const path of ['/cod-form-editor.js','/cod-checkout-builder.js','/cod-form-launcher.js']) {
+  for (const path of ['/cod-form-editor.js','/cod-checkout-builder.js','/cod-form-launcher.js','/store-theme-sections.js']) {
     const asset=await request(base,path);assert.equal(asset.response.status,200);assert.match(asset.response.headers.get('content-type'),/javascript/);
   }
   const store = (await request(base, '/api/stores', 'POST', { name: 'Script Store', slug: 'script-store' })).body;

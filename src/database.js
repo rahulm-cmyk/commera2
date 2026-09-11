@@ -121,6 +121,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
           ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS featured_visible INTEGER NOT NULL DEFAULT 1;
           ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS home_section_order_json TEXT NOT NULL DEFAULT '["banner","featured"]';
           ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS custom_css TEXT NOT NULL DEFAULT '';
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS home_sections_json TEXT NOT NULL DEFAULT '[]';
+          ALTER TABLE storefront_settings ADD COLUMN IF NOT EXISTS theme_settings_json TEXT NOT NULL DEFAULT '{}';
         END $$`);
       db.exec(`
         CREATE TABLE IF NOT EXISTS live_visitor_sessions (
@@ -818,6 +820,7 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       footer_contact TEXT NOT NULL DEFAULT '', footer_show_products INTEGER NOT NULL DEFAULT 1,
       banner_visible INTEGER NOT NULL DEFAULT 1, featured_visible INTEGER NOT NULL DEFAULT 1,
       home_section_order_json TEXT NOT NULL DEFAULT '["banner","featured"]', custom_css TEXT NOT NULL DEFAULT '',
+      home_sections_json TEXT NOT NULL DEFAULT '[]', theme_settings_json TEXT NOT NULL DEFAULT '{}',
       section_heading TEXT NOT NULL DEFAULT 'Featured Products', status TEXT NOT NULL DEFAULT 'draft' CHECK(status IN ('draft','published')),
       updated_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP, published_at TEXT
     );
@@ -1177,6 +1180,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
     ["featured_visible", "ALTER TABLE storefront_settings ADD COLUMN featured_visible INTEGER NOT NULL DEFAULT 1"],
     ["home_section_order_json", "ALTER TABLE storefront_settings ADD COLUMN home_section_order_json TEXT NOT NULL DEFAULT '[\"banner\",\"featured\"]'"],
     ["custom_css", "ALTER TABLE storefront_settings ADD COLUMN custom_css TEXT NOT NULL DEFAULT ''"],
+    ["home_sections_json", "ALTER TABLE storefront_settings ADD COLUMN home_sections_json TEXT NOT NULL DEFAULT '[]'"],
+    ["theme_settings_json", "ALTER TABLE storefront_settings ADD COLUMN theme_settings_json TEXT NOT NULL DEFAULT '{}'"],
   ];
   for (const [column, sql] of storefrontMigrations)
     if (!storefrontColumns.has(column)) db.exec(sql);

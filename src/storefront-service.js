@@ -1,3 +1,5 @@
+import { coreSectionIds, normalizeSectionOrder, normalizeThemeSections, normalizeThemeSettings } from './theme-sections.js';
+
 const clean = (value) => String(value ?? "").trim();
 
 const row = (value) =>
@@ -43,14 +45,6 @@ const navigationLinks = (value) => {
     if (label.length > 40) throw new Error("Header link labels must be 40 characters or fewer");
     return { label, url: publicUrl(item?.url, { optional: false }) };
   });
-};
-const homeSectionTypes = ["banner", "featured"];
-const homeSectionOrder = (value) => {
-  if (!Array.isArray(value)) throw Error("Homepage section order must be a list");
-  const order = value.map((item) => clean(item));
-  if (order.length !== homeSectionTypes.length || new Set(order).size !== homeSectionTypes.length || order.some((item) => !homeSectionTypes.includes(item)))
-    throw Error("Homepage section order is invalid");
-  return order;
 };
 export const safeThemeCss = (value) => {
   const css = String(value ?? "").trim();
@@ -307,6 +301,11 @@ export class StorefrontService {
 
   get(storeId) {
     const settings = row(this.#settings(storeId));
+    const customSections = normalizeThemeSections(parseJson(settings.homeSectionsJson, []));
+    const themeSettings = normalizeThemeSettings(parseJson(settings.themeSettingsJson, {}));
+    let sectionOrder;
+    try { sectionOrder = normalizeSectionOrder(parseJson(settings.homeSectionOrderJson, coreSectionIds), customSections); }
+    catch { sectionOrder = [...coreSectionIds, ...customSections.map(section => section.id)]; }
     const featured = this.db
       .prepare(
         `
@@ -420,7 +419,9 @@ export class StorefrontService {
         },
         bannerVisible: Boolean(settings.bannerVisible),
         featuredVisible: Boolean(settings.featuredVisible),
-        sectionOrder: homeSectionOrder(parseJson(settings.homeSectionOrderJson, homeSectionTypes)),
+        sectionOrder,
+        customSections,
+        themeSettings,
         customCss: settings.customCss || "",
         sectionHeading: settings.sectionHeading,
         status: settings.status,
@@ -808,6 +809,17 @@ export class StorefrontService {
   saveHome(storeId, input = {}) {
     const settings = this.#settings(storeId);
     const current = row(settings);
+    const currentSections=normalizeThemeSections(parseJson(current.homeSectionsJson, []));
+    const customSections=input.customSections===undefined?currentSections:normalizeThemeSections(input.customSections,currentSections,(image,label,previous)=>{
+      if(image===null)return null;
+      if(image?.dataUrl){
+        if(!previous||image.dataUrl!==previous.dataUrl||image.name!==previous.name||image.type!==previous.type)throw Error(`${label} upload is invalid`);
+        return previous;
+      }
+      const saved=this.#asset(image,label);
+      return {name:saved.name,type:saved.type,dataUrl:`data:${saved.type};base64,${saved.data}`};
+    });
+    const themeSettings=normalizeThemeSettings(input.themeSettings??parseJson(current.themeSettingsJson,{}));
     const banner =
       input.bannerImage === undefined
         ? settings.banner_base64
@@ -898,7 +910,13 @@ export class StorefrontService {
       ),
       bannerVisible = Boolean(input.bannerVisible ?? current.bannerVisible),
       featuredVisible = Boolean(input.featuredVisible ?? current.featuredVisible),
-      sectionOrder = homeSectionOrder(input.sectionOrder ?? parseJson(current.homeSectionOrderJson, homeSectionTypes)),
+      sectionOrder = (()=>{
+        if(input.sectionOrder!==undefined)return normalizeSectionOrder(input.sectionOrder,customSections);
+        const expected=[...coreSectionIds,...customSections.map(section=>section.id)];
+        const saved=parseJson(current.homeSectionOrderJson,coreSectionIds);
+        const reconciled=[...saved.filter(id=>expected.includes(id)),...expected.filter(id=>!saved.includes(id))];
+        return normalizeSectionOrder(reconciled,customSections);
+      })(),
       customCss = safeThemeCss(input.customCss ?? current.customCss);
     if (footerContact.length > 500)
       throw Error("Footer contact information must be 500 characters or fewer");
@@ -925,7 +943,7 @@ export class StorefrontService {
           announcement_background=?, announcement_text_color=?,
           header_links_json=?, header_sticky=?,
           footer_contact=?, footer_show_products=?,
-          banner_visible=?, featured_visible=?, home_section_order_json=?, custom_css=?,
+          banner_visible=?, featured_visible=?, home_section_order_json=?, custom_css=?, home_sections_json=?, theme_settings_json=?,
           section_heading=?,
           status='draft',
           published_at=NULL,
@@ -963,6 +981,8 @@ export class StorefrontService {
           featuredVisible ? 1 : 0,
           JSON.stringify(sectionOrder),
           customCss,
+          JSON.stringify(customSections),
+          JSON.stringify(themeSettings),
           clean(input.sectionHeading ?? current.sectionHeading),
           storeId,
         );
@@ -986,7 +1006,8 @@ export class StorefrontService {
     const model = this.get(storeId);
     if (!model.logo?.dataUrl)
       throw Error("Store Logo is required before publishing");
-    const visibleSections = model.home.sectionOrder.filter((section) => section === "banner" ? model.home.bannerVisible : model.home.featuredVisible);
+    const customById=new Map(model.home.customSections.map(section=>[section.id,section]));
+    const visibleSections = model.home.sectionOrder.filter((section) => section === "banner" ? model.home.bannerVisible : section === "featured" ? model.home.featuredVisible : customById.get(section)?.visible);
     if (!visibleSections.length)
       throw Error("Show at least one homepage section before publishing. Your draft is saved.");
     if (model.home.bannerVisible && !model.home.banner?.dataUrl)
