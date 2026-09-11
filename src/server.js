@@ -22,6 +22,7 @@ import { ReviewImportService } from "./review-import-service.js";
 import { PolicyService } from "./policy-service.js";
 import { StorefrontService } from "./storefront-service.js";
 import { renderCustomSection } from './theme-sections.js';
+import { botanicalHeroExtras, renderFeaturedProducts } from '../public/store-section-renderer.js';
 import { OnlineStoreService } from './online-store-service.js';
 import { createStorePreviewTokens } from './store-preview-token.js';
 import { renderStoreChrome } from "./store-site-layout.js";
@@ -885,7 +886,7 @@ function executablePublicPage(input) {
     );
 }
 
-function storefrontHomePage({ storefront: model, writtenPolicies = [], preferences = {} }) {
+function storefrontHomePage({ storefront: model, writtenPolicies = [], preferences = {}, preview = false }) {
   const store = model?.store || {};
   const home = model?.home || {};
   const homeStatus = home?.status || "";
@@ -895,7 +896,7 @@ function storefrontHomePage({ storefront: model, writtenPolicies = [], preferenc
     String(home.sectionHeading || "Featured Products"),
   );
 
-  const { announcement, header, footer: policyFooter, favicon, style } = renderStoreChrome(model, writtenPolicies);
+  const { announcement, header, footer: policyFooter, favicon, style } = renderStoreChrome(model, writtenPolicies, {homeSections:preview});
   const theme=home.themeSettings||{};
   const themeStyle=`${style}--store-page-width:${Number(theme.pageWidth||1200)}px;--store-section-spacing:${Number(theme.sectionSpacing||64)}px;--store-button-radius:${Number(theme.buttonRadius??8)}px;--store-card-radius:${Number(theme.cardRadius??8)}px;--store-product-columns:${Number(theme.productColumns||3)};`;
 
@@ -903,32 +904,7 @@ function storefrontHomePage({ storefront: model, writtenPolicies = [], preferenc
     ? `<img class="store-home-banner" src="${home.banner.dataUrl}" alt="${htmlEscape(heading)}">`
     : "";
 
-  const featured = (home.featuredProducts || [])
-    .filter((item) => item && item.active !== 0 && item.productPageStatus === "published")
-    .map((item) => {
-      const itemSlug = encodeURIComponent(item.slug || String(item.id || ""));
-      const itemHref = `/s/${encodeURIComponent(store.slug || "")}/products/${itemSlug}`;
-      const itemName = htmlEscape(item.name || "Product");
-      const itemImage = item.mainImage?.dataUrl
-        ? `<img src="${item.mainImage.dataUrl}" alt="${itemName}">`
-        : "";
-      const rating = Number(item.ratingAverage || 0),
-        ratingCount = Number(item.ratingCount || 0);
-      return `
-        <article class="featured-product-card" data-product-id="${Number(item.id)}">
-          <a href="${itemHref}">
-            ${itemImage}
-            <div>
-              <h3>${itemName}</h3>
-              ${ratingCount ? `<small aria-label="${rating.toFixed(1)} out of 5 stars">★ ${rating.toFixed(1)} · ${ratingCount} review${ratingCount === 1 ? "" : "s"}</small>` : ""}
-              <p>${money(item.pricePaise || 0, store.currency || "INR")}</p>
-              <span>View product</span>
-            </div>
-          </a>
-        </article>`;
-    })
-    .filter(Boolean)
-    .join("");
+  const featured = renderFeaturedProducts(home.featuredProducts||[],store,htmlEscape);
 
   const buttonText = String(home.buttonText || "").trim();
   const buttonHref = home.buttonTargetUrl || "#products";
@@ -936,14 +912,14 @@ function storefrontHomePage({ storefront: model, writtenPolicies = [], preferenc
     ? `<a class="hero-cta" href="${htmlEscape(buttonHref)}">${htmlEscape(buttonText)}</a>`
     : "";
   const sections = {
-    banner: `<section class="store-home-hero" data-store-editor-section="banner" ${home.bannerVisible === false ? "hidden" : ""}>${bannerImage}<div class="store-home-hero-copy"><span class="eyebrow">${htmlEscape(store.name || "")}</span>${heading ? `<h1>${htmlEscape(heading)}</h1>` : ""}${subheading ? `<p>${htmlEscape(subheading)}</p>` : ""}${buttonHtml}</div></section>`,
+    banner: `<section class="store-home-hero" data-store-editor-section="banner" ${home.bannerVisible === false ? "hidden" : ""}>${bannerImage}<div class="store-home-hero-copy"><span class="eyebrow">${htmlEscape(theme.heroEyebrow || store.name || "")}</span><h1>${htmlEscape(heading)}${theme.design==='botanical'&&theme.heroAccent?`<em>${htmlEscape(theme.heroAccent)}</em>`:''}</h1>${subheading ? `<p>${htmlEscape(subheading)}</p>` : ""}${buttonHtml}<div class="botanical-hero-extras">${botanicalHeroExtras(theme,htmlEscape)}</div></div></section>`,
     featured: `<section class="store-home-products" id="products" data-store-editor-section="featured" ${home.featuredVisible === false ? "hidden" : ""}><h2>${sectionHeading}</h2><div class="featured-grid">${featured || "<p>No featured products are published yet.</p>"}</div></section>`,
   };
   for(const section of home.customSections||[])sections[section.id]=renderCustomSection(section,htmlEscape);
   const sectionHtml = (home.sectionOrder || ["banner", "featured"]).map((key) => sections[key] || "").join("");
-  const customCss = home.customCss ? `<style id="commera-theme-custom-style">${home.customCss}</style>` : "";
+  const customCss = (home.customCss ? `<style id="commera-theme-custom-style">${home.customCss}</style>` : "")+'<script src="/store-home-interactions.js" defer></script>';
 
-  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(preferences.title || store.name || "")}</title><meta name="description" content="${htmlEscape(preferences.description || "")}">${favicon}<link rel="stylesheet" href="/store.css">${customCss}</head><body class="storefront-site store-site-shell${theme.animations===false?' store-motion-disabled':''}" style="${themeStyle}">${announcement}${header}<main class="storefront-home" data-status="${homeStatus}"><div class="storefront-home-content">${sectionHtml}</div></main>${policyFooter}</body></html>`;
+  return `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${htmlEscape(preferences.title || store.name || "")}</title><meta name="description" content="${htmlEscape(preferences.description || "")}">${favicon}<link rel="stylesheet" href="/store.css"><link rel="stylesheet" href="/store-botanical.css">${customCss}</head><body class="storefront-site store-site-shell${theme.animations===false?' store-motion-disabled':''}" data-store-design="${theme.design||'classic'}" style="${themeStyle}">${announcement}${header}<main class="storefront-home" data-status="${homeStatus}"><div class="storefront-home-content">${sectionHtml}</div></main>${policyFooter}</body></html>`;
 }
 
 function thankYouPage(
@@ -1200,6 +1176,7 @@ export function createApp({
           return res.end('<!doctype html><html><head><meta name="viewport" content="width=device-width,initial-scale=1"><title>Preview unavailable</title></head><body><h1>This preview link has expired or is invalid</h1><p>Open Preview saved draft again from your merchant workspace.</p></body></html>');
         }
         const html = storefrontHomePage({
+          preview:true,
           storefront: storefront.get(resolvedDomain.storeId),
           preferences: onlineStore.preferences(resolvedDomain.storeId),
           writtenPolicies: policies.listPublished(resolvedDomain.storeId),
@@ -1677,6 +1654,7 @@ export function createApp({
         });
         return res.end(
           storefrontHomePage({
+            preview:true,
             storefront: storefront.get(id),
             preferences: onlineStore.preferences(id),
             writtenPolicies: policies.listPublished(id),
@@ -4044,7 +4022,12 @@ export function createApp({
           "/cod-form-editor.js": "cod-form-editor.js",
           "/shipping-rules.js": "shipping-rules.js",
           "/store-theme-sections.js": "store-theme-sections.js",
+          "/store-section-renderer.js": "store-section-renderer.js",
+          "/store-botanical.css": "store-botanical.css",
+          "/store-botanical-editor.js": "store-botanical-editor.js",
+          "/store-home-interactions.js": "store-home-interactions.js",
           "/store-editor-interactions.js": "store-editor-interactions.js",
+          "/store-policy-editor.js": "store-policy-editor.js",
           "/cod-checkout-builder.js": "cod-checkout-builder.js",
           "/cod-form-launcher.js": "cod-form-launcher.js",
           "/account.js": "account.js",

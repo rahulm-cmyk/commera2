@@ -4,6 +4,7 @@ const names = ['house','store','package','shopping-bag','users','panels-top-left
 const target = new URL('../public/icons/', import.meta.url);
 names.push('copy', 'pencil', 'trash-2', 'file-spreadsheet');
 names.push('type', 'link', 'align-left', 'image', 'list-collapse', 'quote', 'truck');
+names.push('columns-2', 'list-checks');
 await mkdir(target, { recursive: true });
 for (const name of names) await copyFile(new URL(`../node_modules/lucide-static/icons/${name}.svg`, import.meta.url), new URL(`${name}.svg`, target));
 await copyFile(new URL('../node_modules/lucide-static/LICENSE', import.meta.url), new URL('LICENSE', target));

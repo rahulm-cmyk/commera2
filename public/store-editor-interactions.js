@@ -42,17 +42,19 @@ const coreBlocks = {
   header: [{ key:'menu', label:'Menu', fields:'#store-menu-links,#store-menu-add,#store-menu-empty,.store-field-group-title,.store-field-hint', preview:'.store-site-header nav', icon:'menu' }],
   banner: [
     { key:'image', label:'Image', fields:'[name="bannerImage"]', preview:'.store-home-banner', icon:'image' },
-    { key:'heading', label:'Heading', fields:named('bannerHeading'), preview:'.store-home-hero-copy h1', icon:'type' },
+    { key:'heading', label:'Heading', fields:named('bannerHeading','heroAccent','heroEyebrow'), preview:'.store-home-hero-copy h1', icon:'type' },
     { key:'text', label:'Text', fields:named('bannerSubheading'), preview:'.store-home-hero-copy p', icon:'align-left' },
-    { key:'button', label:'Button', fields:named('buttonText','buttonTargetType','buttonProductId','buttonPageId','buttonTargetUrl'), preview:'.hero-cta', icon:'mouse-pointer-2' },
+    { key:'button', label:'Button', fields:named('buttonText','buttonTargetType','buttonProductId','buttonPageId','buttonTargetUrl','heroSecondaryText','heroSecondaryUrl'), preview:'.hero-cta', icon:'mouse-pointer-2' },
+    { key:'highlights', label:'Highlights', fields:named('heroBadges'), preview:'.hero-badges', icon:'list-checks' },
   ],
   featured: [
     { key:'heading', label:'Heading', fields:named('sectionHeading'), preview:'h2', icon:'type' },
-    { key:'products', label:'Products', fields:'.store-product-choices', preview:'.store-home-grid', icon:'package' },
+    { key:'products', label:'Products', fields:'.store-product-choices', preview:'.featured-grid', icon:'package' },
   ],
   footer: [
     { key:'contact', label:'Contact information', fields:named('footerContact'), preview:'#contact', icon:'align-left' },
     { key:'products', label:'Product links', fields:named('footerShowProducts'), preview:'nav[aria-label="Products"]', icon:'menu' },
+    { key:'policies', label:'Store policies', fields:'#store-policy-connections', preview:'nav[aria-label="Policies"]', icon:'shield-check' },
   ],
 };
 
@@ -60,16 +62,16 @@ export function editorBlocks(id, form) {
   if (coreBlocks[id]) return coreBlocks[id];
   const panel = form.querySelector(`[data-theme-section-id="${id}"]`);
   if (!panel) return [];
-  const blocks = [{key:'heading',label:'Heading',fields:field('heading'),preview:'h2',icon:'type'}];
+  const blocks = [{key:'heading',label:'Heading',fields:field('heading','eyebrow'),preview:'h2',icon:'type'}];
   const type = panel.dataset.themeSectionType;
   if (['rich-text','image-with-text'].includes(type)) {
     blocks.push({key:'text',label:'Text',fields:field('text'),preview:'.theme-section-inner > p,.theme-section-copy > p',icon:'align-left'});
-    blocks.push({key:'button',label:'Button',fields:field('buttonText','buttonUrl'),preview:'.theme-section-button',icon:'mouse-pointer-2'});
+    blocks.push({key:'button',label:'Button',fields:`${field('buttonText','buttonUrl')},[data-section-destination]`,preview:'.theme-section-button',icon:'mouse-pointer-2'});
   }
   if (type === 'image-with-text') blocks.unshift({key:'image',label:'Image',fields:'[data-section-image]',preview:'.theme-section-inner > img',icon:'image'});
   [...panel.querySelectorAll('[data-theme-block]')].forEach((row,index) => {
     const label = row.querySelector('[data-section-field="question"],[data-section-field="heading"],[data-section-field="name"]')?.value;
-    const selector = type === 'faq' ? '.theme-faq-list > details' : type === 'benefits' ? '.theme-benefit-grid > article' : '.theme-testimonial-grid > figure';
+    const selector = type === 'faq' ? '.theme-faq-list > details' : type === 'benefits' ? '.theme-benefit-grid > article' : type==='image-grid'?'.theme-image-grid > article':type==='comparison'?'.theme-comparison tbody > tr':'.theme-testimonial-grid > figure';
     blocks.push({key:`block-${index}`,label:label || `Block ${index+1}`,row,index,preview:selector,icon:type==='faq'?'list-collapse':type==='testimonials'?'quote':'circle-check'});
   });
   return blocks;
@@ -83,6 +85,7 @@ export function showEditorBlock(panel, block) {
     const match = block.row ? child.contains(block.row) : child.matches(block.fields) || [...child.querySelectorAll(block.fields)].some(control=>!control.closest('[data-theme-block]'));
     child.classList.toggle('editor-context-hidden', !match);
   }
+  panel.querySelectorAll('.botanical-banner-controls > .field').forEach(child=>child.classList.toggle('editor-context-hidden',!child.querySelector(block.fields)));
   if (block.row) panel.querySelectorAll('[data-theme-block]').forEach(row => row.classList.toggle('editor-context-hidden',row!==block.row));
 }
 
@@ -186,6 +189,8 @@ export function createSectionPicker(host, {catalog,icon,escape,choose}) {
     benefits:'<h3>The little extras</h3><div class="sample-columns"><div>'+icon('package')+'<b>Thoughtfully made</b></div><div>'+icon('truck')+'<b>Delivered with care</b></div></div>',
     testimonials:'<h3>From our customers</h3><blockquote>A lovely addition to my daily routine.<small>Customer name</small></blockquote>',
     faq:'<h3>Common questions</h3><p class="sample-question">When will my order arrive? <span>+</span></p><p class="sample-question">How do I get in touch? <span>+</span></p>',
+    'image-grid':'<h3>The details that matter</h3><div class="sample-columns"><div>'+icon('image')+'<b>Your first image</b></div><div>'+icon('image')+'<b>Your second image</b></div></div>',
+    comparison:'<h3>A closer look</h3><p class="sample-question">Feature <span>Your product</span></p><p class="sample-question">Materials <span>Details</span></p>',
   };
   const preview=button=>{buttons.forEach(item=>item.classList.toggle('active',item===button));sample.dataset.type=button.dataset.addThemeSection;sample.innerHTML=samples[button.dataset.addThemeSection];};
   buttons.forEach(button=>{

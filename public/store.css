@@ -57,6 +57,7 @@
   color: #17211d;
   text-decoration: none;
 }
+.store-brand-name { display:none; }
 .store-site-brand .store-logo {
   width: auto;
   max-width: 180px;

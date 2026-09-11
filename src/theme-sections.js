@@ -1,6 +1,7 @@
+import { renderSection } from '../public/store-section-renderer.js';
 const clean = value => String(value ?? '').trim();
 
-export const customSectionTypes = ['rich-text','image-with-text','benefits','testimonials','faq'];
+export const customSectionTypes = ['rich-text','image-with-text','benefits','testimonials','faq','image-grid','comparison'];
 export const coreSectionIds = ['banner','featured'];
 
 export const sectionTypeLabels = {
@@ -9,6 +10,8 @@ export const sectionTypeLabels = {
   benefits:'Benefits',
   testimonials:'Testimonials',
   faq:'Collapsible content',
+  'image-grid':'Image gallery',
+  comparison:'Comparison table',
 };
 
 const short = (value,label,max=120) => {
@@ -31,12 +34,13 @@ function blocks(value,type) {
   if(type==='benefits')return items.map(item=>({heading:short(item?.heading,'Benefit heading',80),text:text(item?.text,'Benefit text',300)}));
   if(type==='testimonials')return items.map(item=>({quote:text(item?.quote,'Testimonial',500),name:short(item?.name,'Customer name',80)}));
   if(type==='faq')return items.map(item=>({question:short(item?.question,'Question',160),answer:text(item?.answer,'Answer',1000)}));
+  if(type==='comparison')return items.map(item=>({heading:short(item?.heading,'Feature',80),text:text(item?.text,'Your product',300),other:text(item?.other,'Other product',300)}));
   return [];
 }
 
 export function normalizeThemeSections(value,current=[],normalizeImage) {
   if(!Array.isArray(value))throw Error('Homepage sections must be a list');
-  if(value.length>12)throw Error('Use at most 12 custom homepage sections');
+  if(value.length>20)throw Error('Use at most 20 custom homepage sections');
   const ids=new Set(),currentById=new Map(current.map(section=>[section.id,section]));
   return value.map((input,index)=>{
     const type=clean(input?.type);
@@ -52,13 +56,24 @@ export function normalizeThemeSections(value,current=[],normalizeImage) {
       alignment:choice(input.alignment,['left','center'],'left'),
       colorScheme:choice(input.colorScheme,['default','accent','contrast'],'default'),
       fullWidth:bool(input.fullWidth,false),
+      eyebrow:short(input.eyebrow,'Small heading',100),
+      layout:choice(input.layout,['cards','numbered','strip','timeline'],'cards'),
     };
     if(type==='rich-text')Object.assign(section,{buttonText:short(input.buttonText,'Button text',60),buttonUrl:link(input.buttonUrl)});
     if(type==='image-with-text') {
       const image=input.image===undefined?previous?.image||null:normalizeImage?normalizeImage(input.image,`Image with text ${index+1}`,previous?.image||null):input.image;
       Object.assign(section,{image:image||null,imagePosition:choice(input.imagePosition,['left','right'],'left'),buttonText:short(input.buttonText,'Button text',60),buttonUrl:link(input.buttonUrl)});
     }
-    if(['benefits','testimonials','faq'].includes(type))section.blocks=blocks(input.blocks,type);
+    if(['benefits','testimonials','faq','comparison'].includes(type))section.blocks=blocks(input.blocks,type);
+    if(type==='comparison')Object.assign(section,{columnHeading:short(input.columnHeading,'Your column heading',80),otherHeading:short(input.otherHeading,'Other column heading',80)});
+    if(type==='image-grid') {
+      const items=Array.isArray(input.blocks)?input.blocks:[];
+      if(items.length>8)throw Error('A section can contain at most 8 blocks');
+      section.blocks=items.map(item=>{
+        const previousImage=previous?.blocks?.find(block=>block.image?.dataUrl===item.image?.dataUrl)?.image||null;
+        return {heading:short(item.heading,'Image heading',80),text:text(item.text,'Image text',300),image:item.image?(normalizeImage?normalizeImage(item.image,'Gallery image',previousImage):item.image):null};
+      });
+    }
     return section;
   });
 }
@@ -76,6 +91,12 @@ export function normalizeThemeSettings(value={}) {
     cardRadius:integer('cardRadius',0,40,8),
     productColumns:integer('productColumns',2,4,3),
     animations:bool(value.animations,true),
+    design:choice(value.design,['classic','botanical'],'classic'),
+    heroEyebrow:short(value.heroEyebrow,'Banner small heading',100),
+    heroAccent:short(value.heroAccent,'Banner highlighted heading',100),
+    heroSecondaryText:short(value.heroSecondaryText,'Second button text',60),
+    heroSecondaryUrl:link(value.heroSecondaryUrl),
+    heroBadges:(Array.isArray(value.heroBadges)?value.heroBadges:[]).slice(0,4).map(item=>short(item,'Banner highlight',80)),
   };
 }
 
@@ -87,11 +108,5 @@ export function normalizeSectionOrder(value,customSections=[]) {
 }
 
 export function renderCustomSection(section,escape) {
-  const e=value=>escape(String(value??'')),hidden=section.visible?'':' hidden',wide=section.fullWidth?' is-full-width':'',scheme=` theme-${e(section.colorScheme)}`,align=` align-${e(section.alignment)}`;
-  const button=section.buttonText&&section.buttonUrl?`<a class="theme-section-button" href="${e(section.buttonUrl)}">${e(section.buttonText)}</a>`:'';
-  if(section.type==='rich-text')return `<section class="theme-custom-section theme-rich-text${wide}${scheme}${align}" data-store-editor-section="${e(section.id)}"${hidden}><div class="theme-section-inner"><h2>${e(section.heading)}</h2>${section.text?`<p>${e(section.text)}</p>`:''}${button}</div></section>`;
-  if(section.type==='image-with-text')return `<section class="theme-custom-section theme-image-text${wide}${scheme} image-${e(section.imagePosition)}" data-store-editor-section="${e(section.id)}"${hidden}><div class="theme-section-inner">${section.image?.dataUrl?`<img src="${e(section.image.dataUrl)}" alt="${e(section.heading)}">`:'<div class="theme-image-placeholder" aria-hidden="true"></div>'}<div class="theme-section-copy"><h2>${e(section.heading)}</h2>${section.text?`<p>${e(section.text)}</p>`:''}${button}</div></div></section>`;
-  if(section.type==='benefits')return `<section class="theme-custom-section theme-benefits${wide}${scheme}${align}" data-store-editor-section="${e(section.id)}"${hidden}><div class="theme-section-inner"><h2>${e(section.heading)}</h2>${section.text?`<p class="theme-section-intro">${e(section.text)}</p>`:''}<div class="theme-benefit-grid">${(section.blocks||[]).map(item=>`<article><span aria-hidden="true">✓</span><h3>${e(item.heading)}</h3><p>${e(item.text)}</p></article>`).join('')}</div></div></section>`;
-  if(section.type==='testimonials')return `<section class="theme-custom-section theme-testimonials${wide}${scheme}${align}" data-store-editor-section="${e(section.id)}"${hidden}><div class="theme-section-inner"><h2>${e(section.heading)}</h2><div class="theme-testimonial-grid">${(section.blocks||[]).map(item=>`<figure><blockquote>${e(item.quote)}</blockquote><figcaption>${e(item.name)}</figcaption></figure>`).join('')}</div></div></section>`;
-  return `<section class="theme-custom-section theme-faq${wide}${scheme}" data-store-editor-section="${e(section.id)}"${hidden}><div class="theme-section-inner"><h2>${e(section.heading)}</h2>${section.text?`<p class="theme-section-intro">${e(section.text)}</p>`:''}<div class="theme-faq-list">${(section.blocks||[]).map(item=>`<details><summary>${e(item.question)}</summary><p>${e(item.answer)}</p></details>`).join('')}</div></div></section>`;
+  return renderSection(section,escape);
 }

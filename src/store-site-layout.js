@@ -14,8 +14,9 @@ export function renderStoreChrome(model, policies = [], options = {}) {
   if (!model) return { announcement: "", header: "", footer: "", style: "", favicon: "" };
   const { store, home = {}, branding = {} } = model;
   const homeHref = `/s/${encodeURIComponent(store.slug)}`;
+  const brandHref=options.homeSections?'#':homeHref;
   const logo = model.logo?.dataUrl
-    ? `<img class="store-logo" src="${escape(model.logo.dataUrl)}" alt="${escape(model.logo.alt || store.name)}">`
+    ? `<img class="store-logo" src="${escape(model.logo.dataUrl)}" alt="${escape(model.logo.alt || store.name)}"><strong class="store-brand-name">${escape(store.name)}</strong>`
     : `<strong>${escape(store.name)}</strong>`;
   const links = home.header?.links?.length ? home.header.links : [
     { label: "Home", url: homeHref },
@@ -24,13 +25,13 @@ export function renderStoreChrome(model, policies = [], options = {}) {
     ...(home.footer?.contact ? [{ label: "Contact", url: "#contact" }] : []),
   ];
   const navigation = links.map((link) =>
-    `<a href="${escape(storeLink(link.url, store.slug))}">${escape(link.label)}</a>`
+    `<a href="${escape(options.homeSections&&link.url===homeHref?'#':options.homeSections&&String(link.url).startsWith('#')?link.url:storeLink(link.url, store.slug))}">${escape(link.label)}</a>`
   ).join("");
   const message = home.announcement;
   const announcement = message?.enabled
     ? `<aside class="store-announcement" data-store-editor-section="announcement" style="--announcement-bg:${escape(message.backgroundColor)};--announcement-text:${escape(message.textColor)}"><span>${escape(message.message)}</span>${message.linkText && message.linkUrl ? `<a href="${escape(storeLink(message.linkUrl, store.slug))}">${escape(message.linkText)}</a>` : ""}</aside>`
     : "";
-  const header = `<header class="store-site-header${home.header?.sticky ? " is-sticky" : ""}" data-store-editor-section="header"><a class="store-site-brand" href="${homeHref}">${options.logoHtml || logo}</a><nav aria-label="Store navigation">${navigation}</nav><details class="store-mobile-menu"><summary aria-label="Open store menu">Menu</summary><nav aria-label="Mobile store navigation">${navigation}</nav></details></header>`;
+  const header = `<header class="store-site-header${home.header?.sticky ? " is-sticky" : ""}" data-store-editor-section="header"><a class="store-site-brand" href="${brandHref}">${options.logoHtml || logo}</a><nav aria-label="Store navigation">${navigation}</nav><details class="store-mobile-menu"><summary aria-label="Open store menu"><img src="/icons/menu.svg" alt="" width="22" height="22"></summary><nav aria-label="Mobile store navigation">${navigation}</nav></details></header>`;
   const products = home.footer?.showProducts
     ? (home.featuredProducts || []).filter((product) => product.active !== 0 && product.productPageStatus === "published")
       .map((product) => `<a href="${homeHref}/products/${encodeURIComponent(product.slug)}">${escape(product.name)}</a>`).join("")

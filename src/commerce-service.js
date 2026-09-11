@@ -236,7 +236,9 @@ export class CommerceService {
       name = clean(input.name ?? current.name),
       slug = this.#slug(input.slug ?? current.slug),
       price = Number(input.pricePaise ?? current.pricePaise),
-      comparePriceValue = input.comparePricePaise ?? current.comparePricePaise,
+      comparePriceValue = input.comparePricePaise === undefined
+        ? current.comparePricePaise
+        : input.comparePricePaise,
       comparePrice =
         comparePriceValue === null || comparePriceValue === ""
           ? null

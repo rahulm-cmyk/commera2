@@ -9,8 +9,8 @@
     "preview:ui": "node scripts/merchant-ui-preview.mjs",
     "ui:icons": "node scripts/sync-ui-icons.mjs",
     "migrate:postgres": "node src/migrate-sqlite-to-postgres.js",
-    "test": "node --test",
-    "check": "node --check src/server.js && node --test"
+    "test": "node --test \"test/**/*.test.js\"",
+    "check": "node --check src/server.js && npm test"
   },
   "engines": {
     "node": ">=24"

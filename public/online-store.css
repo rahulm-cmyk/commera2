@@ -577,6 +577,20 @@ body.online-theme-editor-open #store-save-error {
 .theme-section-picker [data-add-theme-section] small { color:#6c797f; font-size:11px; line-height:1.4; }
 
 .editor-context-hidden { display:none !important; }
+#store-policy-connections { min-width:0; }
+.store-policy-heading { display:flex; align-items:center; justify-content:space-between; gap:12px; padding-bottom:8px; }
+.store-policy-heading > strong { font-size:13px; }
+.store-policy-connection { display:grid; gap:8px; padding:14px 0; border-top:1px solid #e1e5e7; }
+.store-policy-connection > div:first-child { display:flex; justify-content:space-between; align-items:flex-start; gap:10px; }
+.store-policy-connection strong { min-width:0; overflow-wrap:anywhere; color:#283439; font-size:12px; font-weight:600; }
+.store-policy-status { flex:0 0 auto; color:#6c757c; font-size:11px; line-height:1.5; }
+.store-policy-status[data-status="published"] { color:#23744d; }
+.store-policy-status[data-status="draft"] { color:#946617; }
+.store-policy-actions { display:flex; align-items:center; justify-content:flex-end; gap:6px; }
+body.online-theme-editor-open #store-policy-connections .icon-button { display:inline-grid; place-items:center; width:32px; min-width:32px; height:32px; min-height:32px; padding:6px; border:1px solid #d8dfe2; border-radius:4px; background:#fff; }
+body.online-theme-editor-open #store-policy-connections .secondary { min-height:32px; padding:5px 10px; border-radius:4px; font-size:12px; }
+#store-policy-connections :disabled { opacity:.4; cursor:default; }
+#store-policy-connections .icon-button img { width:16px; height:16px; }
 body.online-theme-editor-open .store-editor-title { max-width:210px; }
 body.online-theme-editor-open .store-section-heading > div { flex:1; min-width:0; overflow-wrap:anywhere; }
 body.online-theme-editor-open .store-settings-close { flex:0 0 28px; min-width:28px; min-height:28px; padding:4px; border:0; background:transparent; }
@@ -723,3 +737,6 @@ body.online-theme-editor-open:has(> #app-sidebar) .store-section-popover::backdr
   .section-picker-sample { display:none; }
   .section-picker-search input { font-size:16px; }
 }
+.botanical-banner-controls.is-classic { display:none; }
+.botanical-banner-controls { display:grid; gap:16px; }
+.theme-custom-editor [data-theme-image-holder] .theme-section-image { aspect-ratio:4/3; }
