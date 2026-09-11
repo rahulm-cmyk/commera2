@@ -324,6 +324,7 @@ let stores = [],
   currentMerchantLocation = location.pathname + location.search;
 const selectedStoreKey = "commera2-selected-store";
 const viewPaths = {
+  campaigns: '/campaigns',
   account: "/account",
   home: "/overview",
   store: "/store",
@@ -372,6 +373,7 @@ const validProductTabs = new Set([
   validPolicyTabs = new Set(["rules", "written", "contact"]);
 function routeFromPath(pathname = location.pathname) {
   const path = pathname.replace(/\/+$/, "") || "/";
+  if (path === '/campaigns') return {valid:true,view:'campaigns',path};
   if (path === "/account") return { valid: true, view: "account", path };
   if (path === "/" || path === "/overview")
     return { valid: true, view: "home", path: "/overview" };
@@ -779,6 +781,7 @@ function render() {
   if (route.reviewTab) reviewTab = route.reviewTab;
   if (route.policyTab) policyTab = route.policyTab;
   const names = {
+    campaigns: 'UTM Sheet',
     account: "Account & Security",
     home: "Home",
     store: "Store",
@@ -809,6 +812,15 @@ function render() {
   document.querySelector('.online-store-subnav').hidden = !['store','online-store'].includes(view);
   document.querySelectorAll('[data-route]').forEach(button => button.classList.toggle('active', button.dataset.route === `/online-store/${route.onlineTab || 'themes'}`));
   if (view === 'online-store') return onlineStoreView(route);
+  if (view === 'campaigns') {
+    const requestedStore = storeId;
+    content.innerHTML = '<p role="status">Loading UTM sheet...</p>';
+    const isActive = () => routeFromPath().view === 'campaigns' && storeId === requestedStore;
+    import('/utm-sheet.js?v=1').then(module => {
+      if (isActive()) module.renderUtmSheet({root:content,storeId:requestedStore,api,esc,isActive});
+    }).catch(error => { if(isActive()) content.innerHTML = `<p role="alert">${esc(error.message)}</p>`; });
+    return;
+  }
   if (view === "account") return renderAccount({ root: content, api, esc,
     updateIdentity: updateAccountIdentity, updateCsrf: (value) => { csrfToken = value; },
     isActive: () => routeFromPath().view === "account" && Boolean(merchantIdentity),
@@ -1746,12 +1758,35 @@ function settingsView() {
 }
 function codFormView() {
   const cfg = data.settings.codForm,
-    fieldRows = Object.entries(cfg.fields)
-      .map(
-        ([key, value]) =>
-          `<tr><td><strong>${esc(value.label || key)}</strong><small>${esc(key)}</small></td><td><label class="switch"><input type="checkbox" aria-label="Show ${esc(value.label || key)}" name="field-${key}-show" ${value.show ? "checked" : ""}><span></span></label></td><td><label class="switch"><input type="checkbox" aria-label="Require ${esc(value.label || key)}" name="field-${key}-required" ${value.required ? "checked" : ""}><span></span></label></td><td class="row-menu-cell"><details class="row-menu field-row-menu"><summary aria-label="Edit ${esc(value.label || key)}">›</summary><div><label>Label<input name="field-${key}-label" value="${esc(value.label)}" required></label><label>Placeholder<input name="field-${key}-placeholder" value="${esc(value.placeholder || "")}"></label></div></details></td></tr>`,
-      )
+    requiredFieldKeys = new Set([
+      "fullName",
+      "phone",
+      "address1",
+      "pincode",
+      "city",
+      "state",
+      "country",
+    ]),
+    fieldCards = Object.entries(cfg.fields)
+      .map(([key, value]) => {
+        const label = esc(value.label || key),
+          isLocked = requiredFieldKeys.has(key),
+          showChecked = isLocked ? true : Boolean(value.show),
+          requiredChecked = isLocked ? true : Boolean(value.required),
+          showAttr = isLocked
+            ? "checked disabled"
+            : showChecked
+              ? "checked"
+              : "",
+          requiredAttr = isLocked
+            ? "checked disabled"
+            : requiredChecked
+              ? "checked"
+              : "";
+        return `<article class="cod-field-card ${isLocked ? "is-locked" : ""}"><div class="cod-field-card-head"><div><h3>${label}</h3><small>${esc(key)}</small></div>${isLocked ? '<span class="status-badge is-active">Required</span>' : ""}</div><label class="field">Label<input name="field-${key}-label" value="${esc(value.label)}" required></label><label class="field">Placeholder<input name="field-${key}-placeholder" value="${esc(value.placeholder || "")}" placeholder="Add placeholder text"></label><div class="field-switches"><div class="switch-row"><span>Visible</span><label class="switch"><input type="checkbox" aria-label="Show ${esc(value.label || key)}" name="field-${key}-show" ${showAttr}><span></span></label></div><div class="switch-row"><span>Required</span><label class="switch"><input type="checkbox" aria-label="Require ${esc(value.label || key)}" name="field-${key}-required" ${requiredAttr}><span></span></label></div></div>${isLocked ? '<p class="cod-field-lock-note">This field is required for COD to work and cannot be disabled.</p>' : ""}</article>`;
+      })
       .join("");
+  const fieldRows = fieldCards;
   const toggle = (name, label, checked) =>
     `<div class="toggle-row"><span><strong>${label}</strong></span><label class="switch"><input type="checkbox" aria-label="${esc(label)}" name="${name}" ${checked ? "checked" : ""}><span></span></label></div>`;
   const otp = cfg.otp || {},
@@ -1795,6 +1830,10 @@ function codFormView() {
       "",
     )}</section><section class="panel cod-settings-pane" data-cod-pane="otp"><div class="panel-head"><div><h2>OTP Verification</h2><span>Verify the customer's mobile number before creating a COD order.</span></div><span class="status-badge ${otp.enabled ? "is-active" : "is-draft"}">${otp.enabled ? "Enabled" : "Disabled"}</span></div>${toggle("otp-enabled", "Enable OTP verification", otp.enabled)}${toggle("otp-requiredForCod", "Require OTP for every COD order", otp.requiredForCod)}${toggle("otp-allowPhoneChange", "Allow phone number changes before verification", otp.allowPhoneChange)}<div class="form-grid"><label class="field">Verification Position<select name="otp-verificationPosition"><option value="before_order" ${otp.verificationPosition === "before_order" ? "selected" : ""}>Before final order (recommended)</option><option value="before_checkout" ${otp.verificationPosition === "before_checkout" ? "selected" : ""}>Immediately after phone number</option></select></label><label class="field">Provider<select name="otp-provider"><option value="custom" ${otp.provider === "custom" ? "selected" : ""}>Configured server provider</option><option value="twilio" ${otp.provider === "twilio" ? "selected" : ""}>Twilio Verify</option></select></label><label class="field">OTP Length<select name="otp-length"><option value="4" ${Number(otp.length) === 4 ? "selected" : ""}>4 digits</option><option value="6" ${Number(otp.length) === 6 ? "selected" : ""}>6 digits</option></select></label><label class="field">Expires after (minutes)<input name="otp-expiryMinutes" type="number" min="1" max="30" value="${Number(otp.expiryMinutes || 5)}"></label><label class="field">Resend delay (seconds)<input name="otp-resendDelaySeconds" type="number" min="10" max="300" value="${Number(otp.resendDelaySeconds || 30)}"></label><label class="field">Maximum attempts<input name="otp-maxAttempts" type="number" min="1" max="10" value="${Number(otp.maxAttempts || 5)}"></label><label class="field">Maximum resends<input name="otp-maxResends" type="number" min="0" max="10" value="${Number(otp.maxResends ?? 3)}"></label></div><div class="otp-provider-card" id="twilio-provider-config" ${otp.provider === "twilio" ? "" : "hidden"}><div class="otp-provider-head"><div><h3>Twilio Verify configuration</h3><p>Credentials are encrypted and kept on the server. The browser receives masked identifiers only.</p></div><span class="status-badge ${otpProvider.configured ? "is-active" : "is-draft"}">${otpProvider.configured ? "Connected" : "Not connected"}</span></div><div class="form-grid"><label class="field">Region<select id="twilio-region"><option value="US1" selected>US1 (United States)</option></select></label><label class="field">Account SID<input id="twilio-account-sid" autocomplete="off" spellcheck="false" placeholder="${esc(otpProvider.accountSidHint || "ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")}"></label><label class="field">Auth Token<input id="twilio-auth-token" type="password" autocomplete="new-password" placeholder="${otpProvider.authTokenConfigured ? "Saved securely — leave blank to keep" : "Enter Auth Token"}"></label><label class="field">Verify Service SID <small>Optional</small><input id="twilio-service-sid" autocomplete="off" spellcheck="false" placeholder="${esc(otpProvider.serviceSidHint || "Created automatically if left blank")}"></label></div><div class="otp-provider-meta"><span>Account: <strong>${esc(otpProvider.accountSidHint || "Not saved")}</strong></span><span>Service: <strong>${esc(otpProvider.serviceSidHint || "Not created")}</strong></span><span>Source: <strong>${esc(otpProvider.source === "store" ? "This store" : otpProvider.source === "server" ? "Server configuration" : "None")}</strong></span></div><div class="inline-actions"><button class="primary" id="connect-otp-provider" type="button">${otpProvider.configured ? "Save & Reconnect" : "Save & Connect"}</button><small>Connecting validates the Twilio account and Verify service. It does not send an SMS.</small></div></div><div class="otp-test-card"><label class="field">Verified tester mobile number<input id="test-otp-phone" inputmode="numeric" autocomplete="tel" maxlength="10" pattern="[6-9][0-9]{9}" placeholder="10-digit Indian mobile number"></label><button class="secondary" id="test-otp-provider" type="button" ${otpProvider.configured ? "" : "disabled"}>Send test OTP</button><small>Twilio trial accounts can send only to verified recipients. Sending may use trial credit.</small></div></section><section class="panel cod-settings-pane" data-cod-pane="protection"><div class="panel-head"><div><h2>COD Protection</h2><span>Layered server-side checks run before any order is created.</span></div></div>${["duplicateOrders", "blackOrders", "multipleFakeOrders", "botTraffic"].map((key) => toggle(`protection-${key}`, fieldLabel(key), cfg.protection?.[key])).join("")}<div class="settings-subsection"><h3>Bot Traffic Prevention</h3>${toggle("bot-enabled", "Enable adaptive bot protection", bot.enabled)}${toggle("bot-rateLimiting", "IP and device rate limiting", bot.rateLimiting)}${toggle("bot-deviceSessionCheck", "Device and session checks", bot.deviceSessionCheck)}${toggle("bot-behaviorDetection", "Behavior detection", bot.behaviorDetection)}${toggle("bot-checkoutToken", "Require signed checkout token", bot.checkoutToken)}${toggle("bot-honeypot", "Honeypot field", bot.honeypot)}${toggle("bot-otpSuspiciousTraffic", "Require OTP for suspicious traffic", bot.otpSuspiciousTraffic)}${toggle("bot-ipReputationCheck", "IP reputation provider", bot.ipReputationCheck)}${toggle("bot-blockKnownBadIps", "Block known bad IPs", bot.blockKnownBadIps)}${toggle("bot-invisibleChallenge", "Invisible challenge", bot.invisibleChallenge)}${toggle("bot-captchaSuspiciousTraffic", "CAPTCHA for suspicious traffic", bot.captchaSuspiciousTraffic)}<div class="form-grid"><label class="field">High-risk action<select name="bot-highRiskAction">${["allow", "challenge", "require_otp", "block"].map((value) => `<option value="${value}" ${bot.highRiskAction === value ? "selected" : ""}>${fieldLabel(value.replace("_", " "))}</option>`).join("")}</select></label><label class="field">Critical-risk action<select name="bot-criticalRiskAction">${["challenge", "require_otp", "block"].map((value) => `<option value="${value}" ${bot.criticalRiskAction === value ? "selected" : ""}>${fieldLabel(value.replace("_", " "))}</option>`).join("")}</select></label><label class="field">IP attempt limit<input name="bot-ipCheckoutLimit" type="number" min="1" value="${Number(bot.ipCheckoutLimit || 10)}"></label><label class="field">IP window (minutes)<input name="bot-ipWindowMinutes" type="number" min="1" value="${Number(bot.ipWindowMinutes || 10)}"></label><label class="field">Device attempt limit<input name="bot-deviceAttemptLimit" type="number" min="1" value="${Number(bot.deviceAttemptLimit || 5)}"></label><label class="field">Device window (minutes)<input name="bot-deviceWindowMinutes" type="number" min="1" value="${Number(bot.deviceWindowMinutes || 30)}"></label></div></div></section></form><div class="cod-settings-pane" data-cod-pane="upsells" id="cod-upsells"></div><div class="cod-settings-pane" data-cod-pane="downsells" id="cod-downsells"></div>`;
   
+  const fieldsPane = document.querySelector('[data-cod-pane="fields"]');
+  if (fieldsPane) {
+    fieldsPane.innerHTML = `<div class="panel-head"><div><h2>Customer Fields</h2><span>Build your checkout form one field at a time.</span></div></div><div class="cod-field-builder">${fieldCards}</div>`;
+  }
   const attempts = data.codProtection?.botAttempts || [],
     protectionPane = document.querySelector('[data-cod-pane="protection"]');
   protectionPane?.insertAdjacentHTML(

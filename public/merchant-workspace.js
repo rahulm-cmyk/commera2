@@ -1,4 +1,5 @@
 export const workspaceDestinations = [
+  { label: 'UTM Sheet', description: 'Google Sheets order export', path: '/campaigns', icon: 'file-spreadsheet' },
   { label: 'Home', description: 'Sales, orders and store setup', path: '/overview', icon: 'house' },
   { label: 'Orders', description: 'Find orders and manage deliveries', path: '/orders', icon: 'shopping-bag' },
   { label: 'Products', description: 'Prices, stock and product details', path: '/products', icon: 'package' },

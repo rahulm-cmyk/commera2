@@ -6,6 +6,8 @@ import { PostgresSyncDatabase } from "./postgres-sync-database.js";
 import { migrateSubscriptionPolicy } from './policy-migrations.js';
 import { backfillLegacyOrderSubtotals } from './order-migrations.js';
 import { migrateAccountSecurity } from './account-migrations.js';
+import { migrateCampaigns } from './campaign-service.js';
+import { migrateUtmSheets } from './utm-sheet-service.js';
 
 const postgresTableSql = (sql) =>
   sql
@@ -440,6 +442,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       END $$;`);
       backfillLegacyOrderSubtotals(db);
       migrateAccountSecurity(db, true);
+      migrateCampaigns(db);
+      migrateUtmSheets(db);
       return db;
     }
   }
@@ -1626,5 +1630,7 @@ export function createDatabase(filename = "data/commera2.sqlite") {
   backfillLegacyOrderSubtotals(db);
   if (filename === ":memory:") db.__commera2TestDatabase = true;
   migrateAccountSecurity(db);
+  migrateCampaigns(db);
+  migrateUtmSheets(db);
   return db;
 }

@@ -420,7 +420,7 @@ body:has(> #app-sidebar) > main {
   overflow: visible;
 }
 
-body:has(> #app-sidebar) :is(.page-header, #content) {
+body:has(> #app-sidebar):not(.online-theme-editor-open) :is(.page-header, #content) {
   width: 100%;
   max-width: 1440px;
   margin-inline: auto;

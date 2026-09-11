@@ -24,12 +24,14 @@ import { createStorePreviewTokens } from './store-preview-token.js';
 import { renderStoreChrome } from "./store-site-layout.js";
 import { LiveVisitorService } from "./live-visitor-service.js";
 import { analyticsAllowed } from './tracking-consent.js';
+import { CampaignService, buildCampaign, platformTemplates } from './campaign-service.js';
 import { OtpService } from "./otp-service.js";
 import { configuredOtpProviders } from "./otp-providers.js";
 import { OtpProviderConfigService } from "./otp-provider-config-service.js";
 import { BotProtectionService } from "./bot-protection-service.js";
 import { AuthService } from "./auth-service.js";
 import { createGoogleAuthProvider } from "./google-auth-provider.js";
+import { UtmSheetService } from './utm-sheet-service.js';
 import { createAccountEmailProvider } from "./account-email.js";
 import { pageTemplates } from "./page-templates.js";
 import { renderBlocks, blockSectionStyle } from '../public/page-blocks.js';
@@ -1064,6 +1066,7 @@ export function createApp({
   authOptions = {},
   googleAuthProvider,
   oauthStateSecret,
+  utmSheetOptions = {},
   accountEmailProvider = createAccountEmailProvider(),
 } = {}) {
   const settingsService = new SettingsService(db);
@@ -1076,6 +1079,8 @@ export function createApp({
     adapters: salesChannelAdapters,
   });
   const service = new CommerceService(db);
+  const campaigns = new CampaignService(db);
+  const utmSheets = new UtmSheetService(db, utmSheetOptions);
   const operations = new ProductOperationsService(db);
   const projects = new ProjectService(db, projectOptions);
   const storefront = new StorefrontService(db);
@@ -1171,7 +1176,7 @@ export function createApp({
     recoveryLimiter = createRateLimiter({ limit: 8, windowMs: 15 * 60_000 }),
     securityLimiter = createRateLimiter({ limit: 8, windowMs: 15 * 60_000 });
   let actualPort = port,
-    domainSyncTimer = null;
+    domainSyncTimer = null, sheetSyncTimer = null;
   const server = createServer(async (req, res) => {
     secureResponse(req, res);
     const url = new URL(req.url, "http://localhost");
@@ -1440,6 +1445,19 @@ export function createApp({
         return json(res, 404, { error: "Not found" });
       }
 
+      if (path === '/api/integrations/google-sheets/callback' && req.method === 'GET') {
+        res.setHeader('set-cookie', `commera2_sheets_oauth=; Path=/api/integrations/google-sheets/callback; HttpOnly; SameSite=Lax; Max-Age=0`);
+        let message = 'connected';
+        try {
+          const session = merchantAuth ? auth.authenticate(sessionToken) : null;
+          const pending = readGoogleState(cookies(req).commera2_sheets_oauth);
+          if (!session || session.sessionId !== pending.sessionId || pending.state !== url.searchParams.get('state') || !url.searchParams.get('code') || url.searchParams.has('error')) throw Error('Invalid connection');
+          auth.requireStore(session.user.id, pending.storeId, { write: true });
+          await utmSheets.complete(pending.storeId, url.searchParams.get('code'), pending.codeVerifier);
+        } catch { message = 'failed'; }
+        res.writeHead(302, { location: `/campaigns?sheetConnection=${message}`, 'cache-control': 'no-store' });
+        return res.end();
+      }
       let merchantSession = null;
       const merchantApi =
         path === "/api/stores" || /^\/api\/stores\//.test(path);
@@ -1479,6 +1497,43 @@ export function createApp({
         if (merchantAuth)
           auth.addStore(merchantSession.user.id, store.id, "owner");
         return json(res, 201, store);
+      }
+      const sheetMatch = path.match(/^\/api\/stores\/(\d+)\/utm-sheet(?:\/(connect|inspect|pause|sync))?$/);
+      if (sheetMatch) {
+        const id = Number(sheetMatch[1]), action = sheetMatch[2];
+        service.getStore(id);
+        if (req.method === 'GET' && !action) return json(res, 200, utmSheets.status(id));
+        if (req.method === 'POST' && action === 'connect') {
+          if (!merchantSession) return json(res, 400, { error: 'Sign in to connect Google Sheets. This preview does not support account connections.' });
+          const state = randomBytes(32).toString('hex'), started = await utmSheets.begin(state);
+          const token = signGoogleState({ state, storeId: id, sessionId: merchantSession.sessionId, codeVerifier: started.codeVerifier, expiresAt: Date.now() + 600000 });
+          res.setHeader('set-cookie', `commera2_sheets_oauth=${encodeURIComponent(token)}; Path=/api/integrations/google-sheets/callback; HttpOnly; SameSite=Lax; Max-Age=600${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+          return json(res, 200, { url: started.url });
+        }
+        if (req.method === 'POST' && action === 'inspect') { const input = await body(req); return json(res, 200, await utmSheets.inspect(id, input.url, input.tab)); }
+        if (req.method === 'POST' && action === 'pause') return json(res, 200, utmSheets.pause(id));
+        if (req.method === 'POST' && action === 'sync') { await utmSheets.syncStore(id); return json(res, 200, utmSheets.status(id)); }
+        if (req.method === 'PUT' && !action) return json(res, 200, await utmSheets.save(id, await body(req)));
+        if (req.method === 'DELETE' && !action) return json(res, 200, utmSheets.disconnect(id));
+        return json(res, 405, { error: 'Method not allowed' });
+      }
+      const campaignMatch = path.match(/^\/api\/stores\/(\d+)\/campaigns(?:\/(build|templates|orders|attribution|import|[a-f0-9-]{36}))?$/);
+      if (campaignMatch) {
+        const id = Number(campaignMatch[1]), action = campaignMatch[2];
+        service.getStore(id);
+        if (req.method === 'GET' && !action) return json(res, 200, campaigns.list(id));
+        if (req.method === 'GET' && action === 'templates') return json(res, 200, platformTemplates);
+        if (req.method === 'GET' && action === 'orders') return json(res, 200, campaigns.report(id));
+        if (req.method === 'GET' && action === 'attribution') return json(res, 200, campaigns.attributedOrders(id));
+        if (req.method === 'POST' && action === 'orders') return json(res, 200, campaigns.importOrders(id, (await body(req)).rows));
+        if (req.method === 'POST' && action === 'import') return json(res, 200, campaigns.importCampaigns(id, (await body(req)).rows));
+        if (req.method === 'POST' && action === 'build') return json(res, 200, buildCampaign(await body(req)));
+        if (req.method === 'POST' && !action) return json(res, 201, campaigns.save(id, await body(req)));
+        if (action && /^[a-f0-9-]{36}$/.test(action)) {
+          if (req.method === 'PUT') return json(res, 200, campaigns.update(id, action, await body(req)));
+          if (req.method === 'DELETE') { campaigns.remove(id, action); return json(res, 200, { deleted: true }); }
+        }
+        return json(res, 405, { error: 'Method not allowed' });
       }
       let match = path.match(/^\/api\/stores\/(\d+)\/dashboard$/);
       if (req.method === "GET" && match) {
@@ -3173,6 +3228,7 @@ export function createApp({
               (configured.codForm.otp.requiredForCod ||
                 risk.action === "require_otp"),
           });
+        campaigns.capture(published.page.storeId, checkout.id, req.headers.referer, configured.privacy, input);
         botProtection.linkCheckout(
           published.page.storeId,
           risk.id,
@@ -3968,6 +4024,10 @@ export function createApp({
           "/page-blocks.js": "page-blocks.js",
           "/page-blocks.css": "page-blocks.css",
           "/online-store.js": "online-store.js",
+          "/campaigns.js": "campaigns.js",
+          "/utm-sheet.js": "utm-sheet.js",
+          "/campaign-tracking.js": "campaign-tracking.js",
+          "/campaigns.css": "campaigns.css",
           "/online-store.css": "online-store.css",
         };
         if (files[path]) {
@@ -3986,7 +4046,7 @@ export function createApp({
         }
         const merchantRoute =
           /^\/(?:online-store(?:\/(?:themes(?:\/current\/edit)?|pages(?:\/(?:new|[a-f0-9-]+\/edit))?|preferences))?|overview|store|products(?:\/(?:new|\d+|[a-z-]+))?|product-pages(?:\/\d+\/edit)?|reviews(?:\/[a-z-]+)?|orders(?:\/\d+)?|customers|abandoned|live-visitors|policy(?:\/[a-z-]+)?|settings(?:\/[a-z-]+)?)\/?$/;
-        if (merchantRoute.test(path) || ["/account", "/reset-password"].includes(path)) {
+        if (merchantRoute.test(path) || ["/account", "/reset-password", "/campaigns"].includes(path)) {
           res.writeHead(200, {
             "content-type": "text/html; charset=utf-8",
             "cache-control": "no-store",
@@ -4009,6 +4069,8 @@ export function createApp({
         server.once("error", reject);
         server.listen(port, host, () => {
           actualPort = server.address().port;
+          sheetSyncTimer = setInterval(() => utmSheets.sync().catch(() => {}), 30000);
+          sheetSyncTimer.unref?.();
           if (Number.isFinite(domainSyncIntervalMs) && domainSyncIntervalMs > 0) {
             domainSyncTimer = setInterval(
               () => domains.syncPendingDomains().catch(() => {}),
@@ -4021,9 +4083,11 @@ export function createApp({
       }),
     stop: () =>
       new Promise((resolve) => {
+        if (sheetSyncTimer) clearInterval(sheetSyncTimer);
         if (domainSyncTimer) clearInterval(domainSyncTimer);
         domainSyncTimer = null;
-        server.close(() => {
+        server.close(async () => {
+          if (utmSheets.running) await utmSheets.running.catch(() => {});
           db.close();
           resolve();
         });

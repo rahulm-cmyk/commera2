@@ -46,6 +46,6 @@ export function renderStoreChrome(model, policies = [], options = {}) {
     header: options.header === false ? "" : header,
     footer: options.footer === false ? "" : footer,
     style,
-    favicon,
+    favicon: favicon + `<script src="/campaign-tracking.js" defer data-store-path="${homeHref}"></script>`,
   };
 }
