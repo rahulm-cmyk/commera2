@@ -1,7 +1,14 @@
 import { OAuth2Client, CodeChallengeMethod } from 'google-auth-library';
 import { createCipheriv, createDecipheriv, createHash, randomBytes } from 'node:crypto';
 
-export const sheetFields = ['order_id', 'date', 'revenue', 'currency', 'utm_id', 'utm_source', 'utm_medium', 'utm_campaign', 'utm_content', 'utm_term'];
+export const sheetFieldDefinitions = [
+  ['order_id', 'Order ID'], ['date', 'Order date'], ['revenue', 'Order total'], ['currency', 'Currency'],
+  ['utm_id', 'UTM ID'], ['utm_source', 'UTM source'], ['utm_medium', 'UTM medium'], ['utm_campaign', 'UTM campaign'], ['utm_content', 'UTM content'], ['utm_term', 'UTM term'],
+  ['platform', 'Platform'], ['campaign_name', 'Campaign name'], ['landing_url', 'Landing URL'], ['product', 'Product'], ['sku', 'SKU'], ['quantity', 'Quantity'],
+  ['customer_name', 'Customer name'], ['customer_phone', 'Customer phone'], ['address', 'Address'], ['city', 'City'], ['state', 'State'], ['country', 'Country'], ['pincode', 'Pincode'],
+  ['payment_method', 'Payment method'], ['payment_status', 'Payment status'], ['fulfillment_status', 'Fulfillment status'], ['delivery_status', 'Delivery status'],
+];
+export const sheetFields = sheetFieldDefinitions.map(([key]) => key);
 const fail = message => { throw Object.assign(new Error(message), { status: 400, statusCode: 400 }); };
 const quoteTab = title => `'${title.replaceAll("'", "''")}'`;
 export function sheetIdFromUrl(value) {
@@ -12,7 +19,7 @@ export function sheetIdFromUrl(value) {
   return id;
 }
 export function mapSheetHeaders(headers) {
-  const aliases = { order: 'order_id', order_number: 'order_id', order_no: 'order_id', order_date: 'date', total: 'revenue', order_total: 'revenue', amount: 'revenue', source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign', campaign_id: 'utm_id', content: 'utm_content', term: 'utm_term' };
+  const aliases = { order: 'order_id', order_number: 'order_id', order_no: 'order_id', order_date: 'date', total: 'revenue', order_total: 'revenue', amount: 'revenue', source: 'utm_source', medium: 'utm_medium', campaign: 'utm_campaign', campaign_id: 'utm_id', content: 'utm_content', term: 'utm_term', customer: 'customer_name', name: 'customer_name', phone: 'customer_phone', mobile: 'customer_phone', phone_number: 'customer_phone', zip: 'pincode', postal_code: 'pincode', product_name: 'product', item: 'product', item_name: 'product', order_status: 'delivery_status', status: 'delivery_status' };
   return headers.map(header => {
     const key = String(header).trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '');
     return sheetFields.includes(key) ? key : aliases[key] || '';
@@ -50,7 +57,7 @@ export class UtmSheetService {
     const row = this.row(id);
     return { available: this.ready, connected: Boolean(row?.credentials), email: row?.email || '', enabled: Boolean(row?.enabled),
       url: row?.spreadsheet_id ? `https://docs.google.com/spreadsheets/d/${row.spreadsheet_id}/edit` : '',
-      title: row?.title || '', tab: row?.tab || '', lastSynced: row?.last_synced || '', error: row?.error || '', fields: sheetFields };
+      title: row?.title || '', tab: row?.tab || '', lastSynced: row?.last_synced || '', error: row?.error || '', fields: sheetFieldDefinitions.map(([key, label]) => ({ key, label })) };
   }
   seal(tokens) {
     const iv = randomBytes(12), cipher = createCipheriv('aes-256-gcm', this.key, iv);
@@ -107,6 +114,18 @@ export class UtmSheetService {
     if (!updated.changes) fail('An export is running. Try again shortly.');
     return this.status(id);
   }
+  async addColumn(id, input) {
+    const name = String(input?.name || '').trim();
+    if (!name || name.length > 100 || /[\r\n]/.test(name)) fail('Enter a short column name.');
+    const info = await this.inspect(id, input.url, input.tab);
+    if (info.headers.some(header => String(header).trim().toLowerCase() === name.toLowerCase())) fail('That column already exists.');
+    const columnNumber = info.headers.length + 1;
+    let letters = '';
+    for (let n = columnNumber; n; n = Math.floor((n - 1) / 26)) letters = String.fromCharCode(65 + ((n - 1) % 26)) + letters;
+    const client = this.client(this.row(id)), base = `https://sheets.googleapis.com/v4/spreadsheets/${info.spreadsheetId}`;
+    await this.request(client, { method: 'PUT', url: `${base}/values/${encodeURIComponent(`${quoteTab(info.tab)}!${letters}1`)}?valueInputOption=RAW`, data: { range: `${quoteTab(info.tab)}!${letters}1`, majorDimension: 'ROWS', values: [[name]] } });
+    return this.inspect(id, input.url, info.tab);
+  }
   pause(id) { this.db.prepare('UPDATE utm_sheet_connections SET enabled=0 WHERE store_id=?').run(id); return this.status(id); }
   disconnect(id) {
     if (this.row(id)?.lock_until > Date.now()) fail('An export is running. Try again shortly.');
@@ -121,8 +140,10 @@ export class UtmSheetService {
       const row = this.row(id), client = this.client(row), mapping = JSON.parse(row.mapping_json);
       const base = `https://sheets.googleapis.com/v4/spreadsheets/${row.spreadsheet_id}`;
       const range = quoteTab(row.tab);
-      const pending = this.db.prepare(`SELECT o.id,o.order_number,o.created_at,o.total_paise,s.currency,a.data_json FROM orders o
-        JOIN stores s ON s.id=o.store_id LEFT JOIN checkout_attribution a ON a.checkout_id=o.checkout_session_id AND a.store_id=o.store_id
+      const pending = this.db.prepare(`SELECT o.id,o.order_number,o.created_at,o.total_paise,o.payment_method,o.payment_status,o.fulfillment_status,o.delivery_status,s.currency,
+        c.name AS customer_name,c.phone AS customer_phone,c.address,c.city,c.state,c.country,c.pincode,
+        oi.name AS product,oi.quantity, a.data_json FROM orders o JOIN stores s ON s.id=o.store_id JOIN customers c ON c.id=o.customer_id
+        LEFT JOIN order_items oi ON oi.order_id=o.id LEFT JOIN checkout_attribution a ON a.checkout_id=o.checkout_session_id AND a.store_id=o.store_id
         WHERE o.store_id=? AND o.id>? AND NOT EXISTS (SELECT 1 FROM utm_sheet_exports e WHERE e.store_id=o.store_id AND e.order_id=o.id AND e.spreadsheet_id=? AND e.tab=?) ORDER BY o.id LIMIT 20`).all(id, row.after_order_id, row.spreadsheet_id, row.tab);
       if (!pending.length) return;
       const data = await this.request(client, { url: `${base}/values/${encodeURIComponent(range)}` });
@@ -134,7 +155,7 @@ export class UtmSheetService {
         if (!this.row(id)?.enabled) break;
         const orderId = String(order.order_number || order.id);
         if (!seen.has(orderId)) {
-          const record = { ...JSON.parse(order.data_json || '{}'), order_id: orderId, date: order.created_at, revenue: order.total_paise / 100, currency: order.currency };
+          const record = { ...JSON.parse(order.data_json || '{}'), order_id: orderId, date: order.created_at, revenue: order.total_paise / 100, currency: order.currency, ...order };
           await this.request(client, { method: 'POST', url: `${base}/values/${encodeURIComponent(range)}:append?valueInputOption=RAW&insertDataOption=INSERT_ROWS`, data: { values: [mapping.map(key => record[key] ?? '')] } });
           seen.add(orderId);
         }

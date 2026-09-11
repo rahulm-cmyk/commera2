@@ -66,5 +66,5 @@ test('Sheet API requires authentication, store access and CSRF', async t => {
   const cookie = registered.headers.get('set-cookie').split(';')[0];
   assert.equal((await fetch(`${base}/api/stores/1/utm-sheet/pause`, { method: 'POST', headers: { cookie } })).status, 403);
   const response = await fetch(`${base}/api/integrations/google-sheets/callback?state=invalid&code=fake`, { headers: { cookie }, redirect: 'manual' });
-  assert.equal(response.headers.get('location'), '/campaigns?sheetConnection=failed');
+  assert.match(response.headers.get('location'), /^\/campaigns\?sheetConnection=failed&reason=/);
 });

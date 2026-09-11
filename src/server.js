@@ -1454,7 +1454,11 @@ export function createApp({
           if (!session || session.sessionId !== pending.sessionId || pending.state !== url.searchParams.get('state') || !url.searchParams.get('code') || url.searchParams.has('error')) throw Error('Invalid connection');
           auth.requireStore(session.user.id, pending.storeId, { write: true });
           await utmSheets.complete(pending.storeId, url.searchParams.get('code'), pending.codeVerifier);
-        } catch { message = 'failed'; }
+        } catch (error) {
+          const detail = String(error?.message || 'Connection failed').replace(/(?:client_secret|refresh_token|access_token|code_verifier|code)=[^\s&]+/gi, '$1=[redacted]').slice(0, 180);
+          console.error('Google Sheets connection failed', { message: detail });
+          message = `failed&reason=${encodeURIComponent(detail)}`;
+        }
         res.writeHead(302, { location: `/campaigns?sheetConnection=${message}`, 'cache-control': 'no-store' });
         return res.end();
       }
@@ -1498,7 +1502,7 @@ export function createApp({
           auth.addStore(merchantSession.user.id, store.id, "owner");
         return json(res, 201, store);
       }
-      const sheetMatch = path.match(/^\/api\/stores\/(\d+)\/utm-sheet(?:\/(connect|inspect|pause|sync))?$/);
+      const sheetMatch = path.match(/^\/api\/stores\/(\d+)\/utm-sheet(?:\/(connect|inspect|add-column|pause|sync))?$/);
       if (sheetMatch) {
         const id = Number(sheetMatch[1]), action = sheetMatch[2];
         service.getStore(id);
@@ -1511,6 +1515,7 @@ export function createApp({
           return json(res, 200, { url: started.url });
         }
         if (req.method === 'POST' && action === 'inspect') { const input = await body(req); return json(res, 200, await utmSheets.inspect(id, input.url, input.tab)); }
+        if (req.method === 'POST' && action === 'add-column') { const input = await body(req); return json(res, 200, await utmSheets.addColumn(id, input)); }
         if (req.method === 'POST' && action === 'pause') return json(res, 200, utmSheets.pause(id));
         if (req.method === 'POST' && action === 'sync') { await utmSheets.syncStore(id); return json(res, 200, utmSheets.status(id)); }
         if (req.method === 'PUT' && !action) return json(res, 200, await utmSheets.save(id, await body(req)));

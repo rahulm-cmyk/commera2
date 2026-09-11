@@ -1,5 +1,3 @@
-const fieldLabels = { order_id: 'Order ID', date: 'Order date', revenue: 'Order total', currency: 'Currency', utm_id: 'UTM ID', utm_source: 'UTM source', utm_medium: 'UTM medium', utm_campaign: 'UTM campaign', utm_content: 'UTM content', utm_term: 'UTM term' };
-
 export async function renderUtmSheet({ root, storeId, api, esc, isActive }) {
   const endpoint = `/api/stores/${storeId}/utm-sheet`;
   let status, inspected = null, revision = 0;
@@ -15,10 +13,11 @@ export async function renderUtmSheet({ root, storeId, api, esc, isActive }) {
     catch (e) { if (isActive()) { root.innerHTML = '<p role="alert"></p><button type="button">Try again</button>'; error(e.message); root.querySelector('button').onclick = load; } }
   }
   function draw() {
-    const failed = new URLSearchParams(location.search).get('sheetConnection') === 'failed';
+    const params = new URLSearchParams(location.search), failed = params.get('sheetConnection') === 'failed';
+    const failureReason = failed ? params.get('reason') : '';
     root.innerHTML = `<div class="utm-sheet-workspace">
       <section class="utm-sheet-account"><img src="/icons/file-spreadsheet.svg" width="32" height="32" alt=""><div><h2>Google Sheets</h2><p>${status.connected ? esc(status.email) : 'Not connected'}</p></div><span class="pill">${status.enabled ? 'Auto-sync on' : status.connected ? 'Connected' : 'Not connected'}</span></section>
-      <p role="alert">${esc(status.error || (failed ? 'Google connection was not completed. Please try again.' : ''))}</p>
+      <p role="alert">${esc(status.error || (failed ? `Google connection was not completed${failureReason ? `: ${failureReason}` : '. Please try again.'}` : ''))}</p>
       ${!status.available ? '<p class="utm-sheet-notice">Google Sheets needs administrator setup before you can connect your account.</p>' : ''}
       ${!status.connected ? `<button class="primary" id="utm-connect" ${status.available ? '' : 'disabled'}>Connect Google account</button>` : `
         <form id="utm-sheet-form"><label class="field">Google Sheet link<input type="url" name="url" placeholder="https://docs.google.com/spreadsheets/d/..." value="${esc(status.url)}" required></label><button class="secondary" type="submit">Choose worksheet</button></form>
@@ -44,10 +43,15 @@ export async function renderUtmSheet({ root, storeId, api, esc, isActive }) {
   }
   function drawColumns(url) {
     const host = root.querySelector('#utm-sheet-columns');
-    host.innerHTML = `<label class="field">Worksheet<select id="utm-tab">${inspected.tabs.map(t => `<option ${t === inspected.tab ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label><div class="table-wrap"><table><thead><tr><th>Your sheet column</th><th>Order information</th></tr></thead><tbody>${inspected.headers.map((h,i) => `<tr><td>${esc(h)}</td><td><select aria-label="Match ${esc(h)}" data-column="${i}"><option value="">Leave empty</option>${status.fields.map(f => `<option value="${f}" ${inspected.mapping[i] === f ? 'selected' : ''}>${esc(fieldLabels[f] || f)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div><p>New orders will be added after auto-sync starts.</p><button class="primary" id="utm-start">Start auto-sync</button>`;
+    host.innerHTML = `<label class="field">Worksheet<select id="utm-tab">${inspected.tabs.map(t => `<option ${t === inspected.tab ? 'selected' : ''}>${esc(t)}</option>`).join('')}</select></label><div class="table-wrap"><table><thead><tr><th>Your sheet column</th><th>Order information</th></tr></thead><tbody>${inspected.headers.map((h,i) => `<tr><td>${esc(h)}</td><td><select aria-label="Match ${esc(h)}" data-column="${i}"><option value="">Leave empty</option>${status.fields.map(field => `<option value="${field.key}" ${inspected.mapping[i] === field.key ? 'selected' : ''}>${esc(field.label)}</option>`).join('')}</select></td></tr>`).join('')}</tbody></table></div><div class="utm-sheet-add-column"><input id="utm-new-column" placeholder="New column name" maxlength="100"><button class="secondary" id="utm-add-column" type="button">Add column</button></div><p>All sheet columns are shown above. New orders will be added after auto-sync starts.</p><button class="primary" id="utm-start">Start auto-sync</button>`;
     host.querySelector('#utm-tab').onchange = e => action(e.currentTarget, async () => {
       host.querySelector('#utm-start').disabled = true;
       inspected = await call('/inspect', { url, tab: e.target.value });
+      if (isActive()) drawColumns(url);
+    });
+    host.querySelector('#utm-add-column').onclick = e => action(e.currentTarget, async () => {
+      const name = host.querySelector('#utm-new-column').value.trim();
+      inspected = await call('/add-column', { url, tab: inspected.tab, name });
       if (isActive()) drawColumns(url);
     });
     host.querySelector('#utm-start').onclick = e => action(e.currentTarget, async () => {
