@@ -175,7 +175,8 @@ body.online-theme-editor-open #store-editor-primary-actions { display:flex; alig
 body.online-theme-editor-open .store-editor-toolbar-end { justify-content:flex-end; }
 body.online-theme-editor-open .store-editor-title { display:grid; gap:1px; min-width:0; }
 body.online-theme-editor-open .store-editor-title strong { overflow:hidden; font-size:13px; text-overflow:ellipsis; white-space:nowrap; }
-body.online-theme-editor-open .store-editor-title span { color:#69767b; font-size:11px; }
+body.online-theme-editor-open .store-editor-title span { display:flex; align-items:center; gap:5px; color:#69767b; font-size:11px; }
+body.online-theme-editor-open .store-editor-title span::before { content:''; width:6px; height:6px; border-radius:50%; background:#23a35a; }
 body.online-theme-editor-open .store-page-selector { min-width:0; }
 body.online-theme-editor-open .store-page-selector select {
   width:100%;
@@ -206,6 +207,7 @@ body.online-theme-editor-open .store-editor-toolbar .icon-button:hover { border-
 body.online-theme-editor-open .store-editor-toolbar .icon-button:disabled { opacity:.35; }
 body.online-theme-editor-open .store-preview-devices { display:flex; gap:2px; padding:2px; border-radius:6px; background:#eef2f2; }
 body.online-theme-editor-open .store-preview-devices .icon-button[aria-pressed="true"] { border-color:#cbd5d7; background:#fff; box-shadow:0 1px 2px rgb(28 42 47 / 8%); }
+body.online-theme-editor-open .store-inspector-toggle[aria-pressed="true"] { border-color:#8bc4c7; background:#e9f7f7; color:#08777b; }
 body.online-theme-editor-open #store-editor-primary-actions .secondary,
 body.online-theme-editor-open #store-editor-primary-actions .primary { min-height:36px; padding:7px 13px; border-radius:5px; white-space:nowrap; }
 body.online-theme-editor-open .store-editor-more { position:relative; }
@@ -242,8 +244,8 @@ body.online-theme-editor-open .store-editor-more > div :is(button,a):hover { bac
 body.online-theme-editor-open .store-editor-mobile-tabs { display:none; }
 body.online-theme-editor-open .online-theme-editor .store-workspace {
   display:grid;
-  grid-template-columns:268px minmax(360px,1fr) 330px;
-  grid-template-areas:"sections preview settings";
+  grid-template-columns:52px 320px minmax(360px,1fr);
+  grid-template-areas:"rail sidebar preview";
   gap:0;
   width:100%;
   height:100%;
@@ -253,8 +255,33 @@ body.online-theme-editor-open .online-theme-editor .store-workspace {
   overflow:hidden;
   background:#eef1f2;
 }
+body.online-theme-editor-open .store-editor-mode-rail {
+  grid-area:rail;
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  gap:5px;
+  height:100%;
+  padding:10px 7px;
+  border-right:1px solid #d7dddf;
+  background:#f7f8f8;
+}
+body.online-theme-editor-open .store-editor-mode-rail button {
+  display:grid;
+  place-items:center;
+  width:38px;
+  min-width:38px;
+  min-height:38px;
+  padding:0;
+  border:1px solid transparent;
+  border-radius:6px;
+  background:transparent;
+  color:#4f5d62;
+}
+body.online-theme-editor-open .store-editor-mode-rail button:hover { background:#eceff0; }
+body.online-theme-editor-open .store-editor-mode-rail button[aria-pressed="true"] { border-color:#c8d9da; background:#fff; color:#08777b; box-shadow:0 1px 3px rgb(21 42 47 / 8%); }
 body.online-theme-editor-open .online-theme-editor .store-section-nav {
-  grid-area:sections;
+  grid-area:sidebar;
   position:static;
   display:block;
   min-width:0;
@@ -281,6 +308,7 @@ body.online-theme-editor-open .store-section-nav-head {
 body.online-theme-editor-open .store-section-nav-head strong { font-size:14px; }
 body.online-theme-editor-open .store-section-nav .icon-button { display:grid; place-items:center; width:34px; min-width:34px; min-height:34px; padding:0; border:0; background:transparent; }
 body.online-theme-editor-open .store-section-group { padding:13px 9px; border-bottom:1px solid #e2e7e8; }
+body.online-theme-editor-open .store-mobile-theme-links { display:none; }
 body.online-theme-editor-open .store-section-group > span { display:block; padding:0 8px 7px; color:#778388; font-size:10px; font-weight:750; text-transform:uppercase; }
 body.online-theme-editor-open .store-section-group > button,
 body.online-theme-editor-open .store-section-row > [data-store-section] {
@@ -352,7 +380,7 @@ body.online-theme-editor-open .online-theme-editor .store-preview-frame {
 }
 body.online-theme-editor-open .online-theme-editor .store-preview-frame iframe { position:absolute; top:0; height:100%; border:0; background:#fff; }
 body.online-theme-editor-open .online-theme-editor .store-settings-area {
-  grid-area:settings;
+  grid-area:sidebar;
   min-width:0;
   height:100%;
   max-height:none;
@@ -364,6 +392,43 @@ body.online-theme-editor-open .online-theme-editor .store-settings-area {
   background:#fff;
   box-shadow:none;
 }
+body.online-theme-editor-open .store-theme-nav,
+body.online-theme-editor-open .store-app-panel {
+  grid-area:sidebar;
+  min-width:0;
+  height:100%;
+  overflow-y:auto;
+  border-right:1px solid #d7dddf;
+  background:#fff;
+}
+body.online-theme-editor-open .online-theme-editor .store-section-nav,
+body.online-theme-editor-open .online-theme-editor .store-settings-area,
+body.online-theme-editor-open .online-theme-editor .store-theme-nav,
+body.online-theme-editor-open .online-theme-editor .store-app-panel { display:none; }
+body.online-theme-editor-open .online-theme-editor .store-workspace[data-sidebar-view="sections"] .store-section-nav,
+body.online-theme-editor-open .online-theme-editor .store-workspace[data-sidebar-view="settings"] .store-settings-area,
+body.online-theme-editor-open .online-theme-editor .store-workspace[data-sidebar-view="theme"] .store-theme-nav,
+body.online-theme-editor-open .online-theme-editor .store-workspace[data-sidebar-view="apps"] .store-app-panel { display:block; }
+body.online-theme-editor-open .store-theme-nav .store-section-group { border-bottom:0; }
+body.online-theme-editor-open .store-tool-list { display:grid; padding:10px; }
+body.online-theme-editor-open .store-tool-list button {
+  display:grid;
+  grid-template-columns:30px minmax(0,1fr) 22px;
+  align-items:center;
+  gap:9px;
+  width:100%;
+  min-height:58px;
+  padding:9px;
+  border:0;
+  border-radius:6px;
+  background:transparent;
+  color:#26343a;
+  text-align:left;
+}
+body.online-theme-editor-open .store-tool-list button:hover { background:#f0f4f4; }
+body.online-theme-editor-open .store-tool-list button > span { display:grid; gap:3px; min-width:0; }
+body.online-theme-editor-open .store-tool-list button strong { font-size:13px; }
+body.online-theme-editor-open .store-tool-list button small { color:#6d7a80; font-size:11px; line-height:1.35; }
 body.online-theme-editor-open .online-theme-editor .store-section-heading {
   position:sticky;
   top:0;
@@ -376,7 +441,7 @@ body.online-theme-editor-open .online-theme-editor .store-section-heading {
   border-bottom:1px solid #e0e5e6;
   background:#fff;
 }
-body.online-theme-editor-open .store-section-heading .store-settings-back { display:none; }
+body.online-theme-editor-open .store-section-heading .store-settings-back { display:grid; place-items:center; flex:0 0 34px; width:34px; min-height:34px; padding:0; border:0; background:transparent; }
 body.online-theme-editor-open .online-theme-editor .store-section-heading h2 { margin:0; font-size:15px; line-height:1.35; letter-spacing:0; }
 body.online-theme-editor-open .online-theme-editor .store-section-heading p { margin:3px 0 0; color:#748086; font-size:11px; line-height:1.4; }
 body.online-theme-editor-open .online-theme-editor .store-editor-grid { display:block; }
@@ -505,7 +570,7 @@ body.online-theme-editor-open #store-save-error {
 
 @media (max-width:1100px) {
   body.online-theme-editor-open .store-editor-toolbar { grid-template-columns:minmax(170px,1fr) minmax(150px,250px) auto; }
-  body.online-theme-editor-open .online-theme-editor .store-workspace { grid-template-columns:235px minmax(320px,1fr) 300px; }
+  body.online-theme-editor-open .online-theme-editor .store-workspace { grid-template-columns:48px 278px minmax(320px,1fr); }
 }
 
 @media (max-width:800px) {
@@ -516,6 +581,7 @@ body.online-theme-editor-open #store-save-error {
   body.online-theme-editor-open .store-page-selector { grid-column:1; grid-row:1; margin-left:42px; }
   body.online-theme-editor-open .store-editor-toolbar-end { grid-column:2; grid-row:1; }
   body.online-theme-editor-open .store-editor-toolbar-end > :is(.store-preview-devices,.store-editor-more) { display:none; }
+  body.online-theme-editor-open .store-inspector-toggle { display:none !important; }
   body.online-theme-editor-open #store-editor-primary-actions {
     position:fixed;
     right:0;
@@ -553,9 +619,13 @@ body.online-theme-editor-open #store-save-error {
   body.online-theme-editor-open .store-editor-mobile-tabs button { min-height:42px; padding:8px; border:0; border-bottom:2px solid transparent; border-radius:0; background:#fff; color:#647278; font-size:12px; }
   body.online-theme-editor-open .store-editor-mobile-tabs button[aria-selected="true"] { border-bottom-color:#087f83; color:#075e61; font-weight:700; }
   body.online-theme-editor-open .online-theme-editor .store-workspace { grid-row:3; display:block; height:100%; }
+  body.online-theme-editor-open .store-editor-mode-rail { display:none; }
+  body.online-theme-editor-open .store-mobile-theme-links { display:block; }
   body.online-theme-editor-open .online-theme-editor .store-section-nav,
   body.online-theme-editor-open .online-theme-editor .store-preview-panel,
-  body.online-theme-editor-open .online-theme-editor .store-settings-area { display:none; width:100%; height:100%; border:0; }
+  body.online-theme-editor-open .online-theme-editor .store-settings-area,
+  body.online-theme-editor-open .online-theme-editor .store-theme-nav,
+  body.online-theme-editor-open .online-theme-editor .store-app-panel { display:none; width:100%; height:100%; border:0; }
   body.online-theme-editor-open .online-theme-editor .store-workspace:not([data-mobile-panel]) .store-section-nav,
   body.online-theme-editor-open .online-theme-editor .store-workspace[data-mobile-panel="sections"] .store-section-nav { display:block; }
   body.online-theme-editor-open .online-theme-editor .store-workspace[data-mobile-panel="preview"] .store-preview-panel { display:block; padding:12px; }

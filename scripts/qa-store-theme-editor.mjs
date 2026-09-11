@@ -18,6 +18,13 @@ page.on('console',message=>{if(message.type()==='error')errors.push(message.text
 
 try {
   await page.goto(`${base}/online-store/themes/current/edit`,{waitUntil:'networkidle'});
+  if(await page.locator('[data-store-editor-mode]').count()!==3)throw Error('Editor mode rail is incomplete');
+  await page.screenshot({path:`${output}/desktop-sections.png`});
+  await page.getByRole('button',{name:'Banner',exact:true}).click();
+  if(await page.locator('#store-section-title').textContent()!=='Banner')throw Error('Section settings did not replace the section list');
+  await page.screenshot({path:`${output}/desktop-banner-edit.png`});
+  await page.getByRole('button',{name:'Back',exact:true}).click();
+  if(await page.locator('.store-workspace').getAttribute('data-sidebar-view')!=='sections')throw Error('Back did not restore the section list');
   await page.getByRole('button',{name:'Add section',exact:true}).click();
   const choices=await page.locator('[data-add-theme-section]').allTextContents();
   if(choices.length!==5)throw Error(`Expected 5 section choices, found ${choices.length}`);
@@ -31,7 +38,8 @@ try {
   await blocks.nth(1).dragTo(blocks.nth(0));
   if(await blocks.nth(0).getByRole('textbox',{name:'Question'}).inputValue()!=='First question')throw Error('Dragging a block did not reorder the content');
 
-  await page.getByRole('button',{name:'Theme settings',exact:true}).click();
+  await page.getByRole('button',{name:'Open theme settings panel',exact:true}).click();
+  await page.getByRole('button',{name:'Layout and motion',exact:true}).click();
   await page.locator('[name="themePageWidth"]').evaluate(input=>{
     input.value='1260';
     input.dispatchEvent(new Event('input',{bubbles:true}));
