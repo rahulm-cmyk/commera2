@@ -190,7 +190,7 @@ const cookies = (req) =>
   );
 const merchantSessionCookie = (token, expiresAt) => {
   const secure = process.env.NODE_ENV === "production" ? "; Secure" : "";
-  return `commera2_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Strict; Expires=${new Date(expiresAt).toUTCString()}${secure}`;
+  return `commera2_session=${encodeURIComponent(token)}; Path=/; HttpOnly; SameSite=Lax; Expires=${new Date(expiresAt).toUTCString()}${secure}`;
 };
 const expiredMerchantCookie = () =>
   `commera2_session=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${process.env.NODE_ENV === "production" ? "; Secure" : ""}`;
@@ -1511,7 +1511,10 @@ export function createApp({
           if (!merchantSession) return json(res, 400, { error: 'Sign in to connect Google Sheets. This preview does not support account connections.' });
           const state = randomBytes(32).toString('hex'), started = await utmSheets.begin(state);
           const token = signGoogleState({ state, storeId: id, sessionId: merchantSession.sessionId, codeVerifier: started.codeVerifier, expiresAt: Date.now() + 600000 });
-          res.setHeader('set-cookie', `commera2_sheets_oauth=${encodeURIComponent(token)}; Path=/api/integrations/google-sheets/callback; HttpOnly; SameSite=Lax; Max-Age=600${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`);
+          res.setHeader('set-cookie', [
+            `commera2_sheets_oauth=${encodeURIComponent(token)}; Path=/api/integrations/google-sheets/callback; HttpOnly; SameSite=Lax; Max-Age=600${process.env.NODE_ENV === 'production' ? '; Secure' : ''}`,
+            merchantSessionCookie(sessionToken, merchantSession.expiresAt),
+          ]);
           return json(res, 200, { url: started.url });
         }
         if (req.method === 'POST' && action === 'inspect') { const input = await body(req); return json(res, 200, await utmSheets.inspect(id, input.url, input.tab)); }
