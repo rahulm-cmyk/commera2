@@ -68,3 +68,29 @@ test('Sheet API requires authentication, store access and CSRF', async t => {
   const response = await fetch(`${base}/api/integrations/google-sheets/callback?state=invalid&code=fake`, { headers: { cookie }, redirect: 'manual' });
   assert.match(response.headers.get('location'), /^\/campaigns\?sheetConnection=failed&reason=/);
 });
+
+test('Google Sheets callback accepts the same signed-in browser and rejects a changed state', async t => {
+  let tokenExchanges=0;
+  const app=createApp({db:createDatabase(':memory:'),port:0,merchantAuth:true,domainSyncIntervalMs:0,utmSheetOptions:{env,clientFactory:()=>({
+    generateCodeVerifierAsync:async()=>({codeVerifier:'test-verifier',codeChallenge:'test-challenge'}),
+    generateAuthUrl:options=>`https://accounts.google.com/o/oauth2/v2/auth?state=${options.state}`,
+    getToken:async options=>{assert.equal(options.codeVerifier,'test-verifier');tokenExchanges++;return {tokens:{refresh_token:'test-refresh',id_token:'test-id'}};},
+    verifyIdToken:async()=>({getPayload:()=>({email:'connected@example.com'})})
+  })}});
+  await app.start('127.0.0.1');t.after(()=>app.stop());const base=`http://127.0.0.1:${app.port}`;
+  const registered=await fetch(base+'/api/auth/register',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({displayName:'Owner',email:'callback@example.com',password:'test-only-pass123'})});
+  const sessionCookie=registered.headers.getSetCookie()[0].split(';')[0],account=await registered.json();
+  const headers={'content-type':'application/json',cookie:sessionCookie,'x-csrf-token':account.csrfToken};
+  const created=await fetch(base+'/api/stores',{method:'POST',headers,body:JSON.stringify({name:'OAuth test',slug:'oauth-test'})});
+  const store=await created.json();assert.equal(created.status,201);
+  const start=await fetch(`${base}/api/stores/${store.id}/utm-sheet/connect`,{method:'POST',headers});
+  assert.equal(start.status,200);const cookieHeaders=start.headers.getSetCookie();assert.ok(cookieHeaders.every(c=>c.includes('SameSite=Lax')));
+  const oauthCookie=cookieHeaders.find(c=>c.startsWith('commera2_sheets_oauth=')).split(';')[0],state=new URL((await start.json()).url).searchParams.get('state');
+  const cookie=`${sessionCookie}; ${oauthCookie}`;
+  const bad=await fetch(`${base}/api/integrations/google-sheets/callback?state=wrong&code=test-code`,{headers:{cookie},redirect:'manual'});
+  assert.match(decodeURIComponent(bad.headers.get('location')),/no longer current/);assert.equal(tokenExchanges,0);
+  const result=await fetch(`${base}/api/integrations/google-sheets/callback?state=${state}&code=test-code`,{headers:{cookie},redirect:'manual'});
+  assert.equal(result.headers.get('location'),'/campaigns?sheetConnection=connected');assert.equal(tokenExchanges,1);
+  const status=await (await fetch(`${base}/api/stores/${store.id}/utm-sheet`,{headers})).json();assert.equal(status.connected,true);assert.equal(status.email,'connected@example.com');
+  assert.equal(JSON.stringify(status).includes('test-refresh'),false);
+});

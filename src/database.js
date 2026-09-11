@@ -8,6 +8,8 @@ import { backfillLegacyOrderSubtotals } from './order-migrations.js';
 import { migrateAccountSecurity } from './account-migrations.js';
 import { migrateCampaigns } from './campaign-service.js';
 import { migrateUtmSheets } from './utm-sheet-service.js';
+import { migrateCodBuilder } from './cod-builder.js';
+import { migrateShippingRules } from './shipping-rules.js';
 
 const postgresTableSql = (sql) =>
   sql
@@ -444,6 +446,8 @@ export function createDatabase(filename = "data/commera2.sqlite") {
       migrateAccountSecurity(db, true);
       migrateCampaigns(db);
       migrateUtmSheets(db);
+    migrateCodBuilder(db);
+    migrateShippingRules(db);
       return db;
     }
   }
@@ -1632,5 +1636,7 @@ export function createDatabase(filename = "data/commera2.sqlite") {
   migrateAccountSecurity(db);
   migrateCampaigns(db);
   migrateUtmSheets(db);
+  migrateCodBuilder(db);
+  migrateShippingRules(db);
   return db;
 }

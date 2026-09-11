@@ -1576,6 +1576,28 @@ select {
   padding: 80px 0;
   border-top: 1px solid color-mix(in srgb, var(--page-text) 10%, transparent);
 }
+.checkout-page .cod-custom-fields > h2 {
+  font-size:18px;
+  line-height:1.4;
+  letter-spacing:0;
+  margin:0 0 16px;
+}
+.checkout-page .cod-addon-options .bundle-choice {
+  display:flex;
+  gap:12px;
+  align-items:center;
+}
+.checkout-page .cod-addon-options input[type="checkbox"],
+.checkout-page .cod-custom-fields input[type="checkbox"] {
+  width:18px;
+  height:18px;
+  min-height:18px;
+  flex:0 0 18px;
+  margin:0;
+  padding:0;
+  appearance:auto;
+  box-shadow:none;
+}
 .checkout-form-panel {
   padding: clamp(24px, 3.5vw, 42px);
 }

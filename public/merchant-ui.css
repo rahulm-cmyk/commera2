@@ -2593,3 +2593,28 @@ body:has(> #app-sidebar):is(.auth-screen, .visual-builder-open) > main > :is(.mo
     scroll-behavior: auto !important;
   }
 }
+.cod-editor-layout { display:grid; grid-template-columns:minmax(280px,1fr) minmax(280px,420px); gap:32px; align-items:start; }
+.shipping-product-choices { display:grid;gap:10px;max-height:180px;overflow:auto;padding:12px 0; }
+.shipping-product-choices label { display:flex;align-items:center;gap:10px; }
+.shipping-weight-grid { display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:16px;margin:20px 0; }
+.shipping-rate-conditions > summary { margin:16px 0;cursor:pointer; }
+.cod-editor-title { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-bottom:18px; }
+.cod-editor-title h2,.cod-editor-title h3 { margin:0; font-size:17px; }
+.cod-editor-title span { color:#687782; font-size:12px; }
+.cod-editor-title button { display:inline-flex; gap:6px; align-items:center; }
+.cod-field-row { border-bottom:1px solid #dce3e8; border-radius:0; background:#fff; }
+.cod-field-row summary { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:13px 10px; cursor:pointer; font-weight:500; }
+.cod-field-tools { display:flex; align-items:center; gap:5px; }
+.cod-field-row summary button { width:28px; height:28px; display:grid; place-items:center; padding:0; border:0; background:transparent; }
+.cod-field-row .cod-field-card { border:0!important; box-shadow:none!important; padding:14px; }
+.cod-editor-controls h3 { margin:24px 0 16px; font-size:15px; }
+.cod-colors { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.cod-colors label { display:grid; gap:7px; font-size:12px; }
+.cod-colors input { height:34px; width:100%; padding:3px; }
+.cod-editor-preview { position:sticky; top:24px; min-width:0; }
+#cod-live-preview { padding:24px; border:1px solid #d9e2e7; max-height:70vh; overflow:auto; }
+#cod-live-preview .field { font-size:12px; margin-bottom:12px; }
+#cod-live-preview h3 { font-size:19px; margin:0 0 8px; }
+#cod-live-preview p { font-size:13px; margin:0 0 18px; }
+#cod-live-preview button { width:100%; padding:12px; border:0; }
+@media(max-width:900px) { .cod-editor-layout { grid-template-columns:minmax(0,1fr); }.cod-editor-preview { position:static; }.cod-colors { grid-template-columns:repeat(2,minmax(0,1fr)); } }

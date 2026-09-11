@@ -6,6 +6,9 @@ import {
 } from "node:crypto";
 import { publishPageSnapshot } from './page-publication.js';
 import { parseDatabaseTimestamp } from './database-time.js';
+import { SettingsService } from './settings-service.js';
+import { quoteShipping, shippingItems } from './shipping-rules.js';
+import { customCheckoutValues, validateCustomCheckout, saveCustomCheckout, checkoutAddons, saveCheckoutAddons, placeCheckoutAddons } from './cod-builder.js';
 
 const row = (value) =>
   value
@@ -685,14 +688,18 @@ export class CommerceService {
     return true;
   }
 
-  #createOrderUpsell(storeId, orderId) {
+  #createOrderUpsell(storeId, orderId, previousToken = '') {
     const order = this.#orderUpsellContext(storeId, orderId);
     if (!order || order.fulfillmentStatus !== "unfulfilled") return null;
+    const previous = this.db.prepare('SELECT upsell_id FROM order_upsell_events WHERE store_id=? AND order_id=?').all(storeId,orderId);
+    const limit = new SettingsService(this.db).get(storeId).codForm.postPurchaseLimit || 1;
+    if (previous.length >= limit) return null;
     const upsell = this.listUpsells(storeId).find((candidate) =>
-      this.#upsellMatchesOrder(storeId, candidate, order),
+      !previous.some(event=>event.upsell_id===candidate.id) && this.#upsellMatchesOrder(storeId, candidate, order),
     );
     if (!upsell) return null;
-    const token = randomBytes(24).toString("base64url"),
+    // Derivation lets a retried decision recover the same next-step token without storing it in plaintext.
+    const token = previousToken ? createHash('sha256').update('commera2:next-upsell:'+previousToken).digest('base64url') : randomBytes(24).toString("base64url"),
       result = this.db
         .prepare(
           `INSERT INTO order_upsell_events
@@ -795,8 +802,11 @@ export class CommerceService {
         : null,
       interaction = { ...event };
     delete interaction.tokenHash;
+    const next = ['ACCEPTED','REJECTED'].includes(event.status)
+      ? this.db.prepare('SELECT id,upsell_id FROM order_upsell_events WHERE store_id=? AND order_id=? AND id>? ORDER BY id LIMIT 1').get(event.storeId,event.orderId,event.id) : null;
     return {
       interaction,
+      nextOffer: next ? {id:next.id,upsellId:next.upsell_id,token:createHash('sha256').update('commera2:next-upsell:'+token).digest('base64url')} : null,
       upsell,
       product,
       media: media?.data_base64
@@ -923,6 +933,7 @@ export class CommerceService {
           "INSERT INTO events (store_id,session_id,event_type) VALUES (?,?,'upsell_accepted')",
         )
         .run(event.storeId, event.checkoutSessionId);
+      this.#createOrderUpsell(event.storeId,event.orderId,token);
       this.db.exec("COMMIT");
       return this.getPublicOrderUpsell(storeSlug, sessionId, eventId, token, {
         markShown: false,
@@ -966,6 +977,7 @@ export class CommerceService {
           "INSERT INTO events (store_id,session_id,event_type) VALUES (?,?,'upsell_rejected')",
         )
         .run(event.storeId, event.checkoutSessionId);
+      this.#createOrderUpsell(event.storeId,event.orderId,token);
       this.db.exec("COMMIT");
       return this.getPublicOrderUpsell(storeSlug, sessionId, eventId, token, {
         markShown: false,
@@ -1726,6 +1738,9 @@ export class CommerceService {
 
   saveCheckoutDraft(storeId, input) {
     this.getStore(storeId);
+    const customConfig = new SettingsService(this.db).get(storeId).codForm.customFields || [];
+    const customValues = validateCustomCheckout(customConfig, input, input.sessionId ? customCheckoutValues(this.db,storeId,input.sessionId) : {}, input.intent === 'submit');
+    const addons = checkoutAddons(this.db,storeId,input.sessionId||'',new SettingsService(this.db).get(storeId).codForm.addons||[],input,true);
     const ipAddress = clean(input.ipAddress);
     if (
       clean(input.website) &&
@@ -1854,9 +1869,11 @@ export class CommerceService {
         ),
         shipping = this.#shippingQuote(
           storeId,
-          pricing.totalPaise,
+          pricing.totalPaise + addons.reduce((sum,item)=>sum+item.pricePaise,0),
           next.state,
           input.shippingMethodId ?? current.shippingMethodId,
+          next.country || 'India',
+          shippingItems(current.productId,next.quantity,downsell,addons),
         );
       this.db
         .prepare(
@@ -1898,6 +1915,8 @@ export class CommerceService {
           storeId,
           input.sessionId,
         );
+      saveCustomCheckout(this.db,storeId,input.sessionId,customValues);
+      saveCheckoutAddons(this.db,storeId,input.sessionId,addons);
       return this.getCheckout(storeId, input.sessionId);
     }
     const page = this.getPage(storeId, Number(input.pageId)),
@@ -1941,9 +1960,11 @@ export class CommerceService {
       ),
       shipping = this.#shippingQuote(
         storeId,
-        pricing.totalPaise,
+        pricing.totalPaise + addons.reduce((sum,item)=>sum+item.pricePaise,0),
         clean(input.state),
         input.shippingMethodId,
+        clean(input.country) || 'India',
+        shippingItems(product.id,quantity,downsell,addons),
       );
     if (ipAddress && input.protectionSettings?.botTraffic !== false) {
       const attempts = this.db
@@ -2010,6 +2031,8 @@ export class CommerceService {
         "INSERT INTO events (store_id,session_id,event_type) VALUES (?,?, 'checkout_start')",
       )
       .run(storeId, id);
+    saveCustomCheckout(this.db,storeId,id,customValues);
+    saveCheckoutAddons(this.db,storeId,id,addons);
     return this.getCheckout(storeId, id);
   }
 
@@ -2034,6 +2057,7 @@ export class CommerceService {
         .get(storeId, id),
     );
     if (!value) throw new Error("Checkout not found");
+    value.customFields = customCheckoutValues(this.db,storeId,id);
     const product = this.getProduct(storeId, value.productId),
       bundle = value.bundleId ? this.getBundle(storeId, value.bundleId) : null,
       upsell = null,
@@ -2050,24 +2074,24 @@ export class CommerceService {
         downsell,
         value.exitOfferDiscountPaise,
       );
-    const orderTotalPaise = pricing.totalPaise + Number(value.shippingPaise || 0),
+    const addons = value.status === 'draft' ? checkoutAddons(this.db,storeId,id,new SettingsService(this.db).get(storeId).codForm.addons||[]) : [];
+    const addonTotal = addons.reduce((sum,a)=>sum+a.pricePaise,0);
+    const shipping = this.#shippingQuote(storeId,pricing.totalPaise+addonTotal,value.state,value.shippingMethodId,value.country||'India',shippingItems(value.productId,value.quantity,downsell,addons));
+    const orderTotalPaise = pricing.totalPaise + addonTotal + shipping.shippingPaise,
       giftCard = this.#giftCardCredit(storeId, value.giftCardCode, orderTotalPaise);
     return {
       ...value,
+      ...shipping,
+      addons,
       couponCode: pricing.coupon?.code ?? null,
       couponDiscountPaise: pricing.couponDiscountPaise,
       exitOfferDiscountPaise: pricing.exitOfferDiscountPaise,
-      subtotalPaise: pricing.subtotalPaise,
+      subtotalPaise: pricing.subtotalPaise + addonTotal,
       discountPaise: pricing.discountPaise,
-      shippingPaise: Number(value.shippingPaise || 0),
+      shippingPaise: shipping.shippingPaise,
       giftCardAppliedPaise: giftCard.appliedPaise,
       totalPaise: orderTotalPaise - giftCard.appliedPaise,
-      deliveryEstimate: this.#shippingQuote(
-        storeId,
-        pricing.totalPaise,
-        value.state,
-        value.shippingMethodId,
-      ).deliveryEstimate,
+      deliveryEstimate: shipping.deliveryEstimate,
     };
   }
 
@@ -2145,10 +2169,15 @@ export class CommerceService {
 
   placeCodOrder(storeId, { sessionId }) {
     const checkout = this.getCheckout(storeId, sessionId);
+    validateCustomCheckout(new SettingsService(this.db).get(storeId).codForm.customFields || [], {}, checkout.customFields, true);
+    checkout.addons = checkoutAddons(this.db,storeId,sessionId,new SettingsService(this.db).get(storeId).codForm.addons || [],undefined,true);
     if (checkout.status !== "draft")
       throw new Error("Checkout was already submitted");
     if (checkoutExpired(checkout.updatedAt))
       throw new Error("Checkout session has expired. Please start again.");
+    if (checkout.shippingUnavailable) throw Error('Delivery is not available for these products and address.');
+    const savedShipping=this.db.prepare('SELECT shipping_paise,shipping_method_id FROM checkout_sessions WHERE store_id=? AND id=?').get(storeId,sessionId);
+    if(Number(savedShipping.shipping_paise)!==checkout.shippingPaise||savedShipping.shipping_method_id!==checkout.shippingMethodId)throw Error('Shipping rates changed. Review your checkout and submit again.');
     if (!/^[\p{L}][\p{L}\p{M} .'’\-]{1,}$/u.test(checkout.name))
       throw new Error("Enter a valid customer name of at least 2 characters");
     if (!/^[6-9][0-9]{9}$/.test(checkout.phone))
@@ -2288,7 +2317,8 @@ export class CommerceService {
         checkout.exitOfferDiscountPaise,
       );
       const method = paymentMethod(checkout.paymentMethod);
-      const orderTotalPaise = pricing.totalPaise + checkout.shippingPaise,
+      const addonTotal = checkout.addons.reduce((sum,a)=>sum+a.pricePaise,0);
+      const orderTotalPaise = pricing.totalPaise + addonTotal + checkout.shippingPaise,
         giftCard = this.#giftCardCredit(storeId, checkout.giftCardCode, orderTotalPaise);
       if (giftCard.appliedPaise) {
         const debit = this.db.prepare("UPDATE gift_cards SET balance_paise=balance_paise-? WHERE id=? AND store_id=? AND status='active' AND balance_paise>=?").run(giftCard.appliedPaise, giftCard.id, storeId, giftCard.appliedPaise);
@@ -2307,7 +2337,7 @@ export class CommerceService {
           pricing.coupon?.code ?? null,
           giftCard.code || null,
           giftCard.appliedPaise,
-          pricing.subtotalPaise,
+          pricing.subtotalPaise + addonTotal,
           pricing.discountPaise,
           checkout.shippingPaise,
           checkout.shippingMethodId,
@@ -2321,6 +2351,7 @@ export class CommerceService {
         );
       const orderId = Number(result.lastInsertRowid),
         orderNumber = `#${String(orderId).padStart(6, "0")}`;
+      placeCheckoutAddons(this.db,storeId,orderId,checkout.addons);
       this.db
         .prepare("UPDATE orders SET order_number=? WHERE id=?")
         .run(orderNumber, orderId);
@@ -2465,6 +2496,9 @@ export class CommerceService {
         .get(storeId, id),
     );
     if (!order) throw new Error("Order not found");
+    const customValues = customCheckoutValues(this.db,storeId,order.checkoutSessionId);
+    const customFields = new SettingsService(this.db).get(storeId).codForm.customFields || [];
+    order.customFields = Object.entries(customValues).map(([id,value])=>({id,label:customFields.find(f=>f.id===id)?.label || id,value}));
     order.items = this.db
       .prepare(
         "SELECT id,product_id,name,quantity,unit_price_paise,line_total_paise FROM order_items WHERE order_id=? ORDER BY id",
@@ -2845,54 +2879,8 @@ export class CommerceService {
     };
   }
 
-  #shippingQuote(storeId, netSubtotalPaise, state, methodId = null) {
-    let config = {
-      freeShippingEnabled: false,
-      freeShippingMinimumPaise: 0,
-      minimumDeliveryDays: 3,
-      maximumDeliveryDays: 5,
-    };
-    const saved = this.db
-      .prepare("SELECT shipping_json FROM store_settings WHERE store_id=?")
-      .get(storeId);
-    try {
-      config = { ...config, ...JSON.parse(saved?.shipping_json || "{}") };
-    } catch {}
-    const methods = this.db
-      .prepare(
-        "SELECT * FROM shipping_methods WHERE store_id=? AND enabled=1 ORDER BY id",
-      )
-      .all(storeId);
-    if (!methods.length)
-      return {
-        shippingPaise: 0,
-        shippingMethodId: null,
-        shippingMethod: "",
-        deliveryEstimate: `${config.minimumDeliveryDays}–${config.maximumDeliveryDays} Days`,
-      };
-    const method = methodId
-      ? methods.find((item) => item.id === Number(methodId))
-      : methods[0];
-    if (!method) throw Error("Shipping method is unavailable");
-    const zone = this.db
-      .prepare(
-        "SELECT * FROM shipping_zones WHERE store_id=? AND shipping_method_id=? AND state=? AND enabled=1",
-      )
-      .get(storeId, method.id, clean(state));
-    let shippingPaise = zone
-      ? Number(zone.price_paise)
-      : Number(method.charge_paise);
-    if (
-      config.freeShippingEnabled &&
-      netSubtotalPaise >= Number(config.freeShippingMinimumPaise)
-    )
-      shippingPaise = 0;
-    return {
-      shippingPaise,
-      shippingMethodId: method.id,
-      shippingMethod: method.name,
-      deliveryEstimate: `${config.minimumDeliveryDays}–${config.maximumDeliveryDays} Days`,
-    };
+  #shippingQuote(storeId, netSubtotalPaise, state, methodId = null, country = 'India', items = []) {
+    return quoteShipping(this.db,storeId,netSubtotalPaise,state,methodId,country,items);
   }
   #codProtection(storeId) {
     const fallback = {

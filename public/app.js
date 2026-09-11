@@ -1,4 +1,6 @@
 import { renderAccount, renderRecovery } from "./account.js";
+import { mountCodFormEditor } from './cod-form-editor.js';
+import { mountShippingRules } from './shipping-rules.js';
 import { overviewMarkup, setupWorkspaceSearch, setupStoreSwitcher, workspaceIcon } from './merchant-workspace.js';
 const $ = (selector) => document.querySelector(selector);
 const content = $("#content"),
@@ -1692,8 +1694,8 @@ function createProductEditor() {
     }
   };
 }
-function bundlesView() {
-  const el = $("#product-section");
+function bundlesView(selector = '#product-section') {
+  const el = $(selector);
   el.innerHTML = `<section class="panel"><div class="panel-head"><div><h2>Product Bundles</h2><span>Create quantity bundles with a dedicated bundle price.</span></div><button class="primary" id="add-bundle" ${data.products.length ? "" : "disabled"}>+ Create bundle</button></div>${
     data.bundles.length
       ? `<table><thead><tr><th>BUNDLE</th><th>PRODUCT</th><th>QUANTITY</th><th>BUNDLE PRICE</th><th>STATUS</th></tr></thead><tbody>${data.bundles
@@ -1808,6 +1810,7 @@ function codFormView() {
   content.innerHTML = `<div class="settings-section-tabs" role="tablist">${[
     ["general", "General"],
     ["fields", "Customer Fields"],
+    ["addons", "Optional Extras"],
     ["otp", "OTP Verification"],
     ["summary", "Order Summary"],
     ["protection", "COD Protection"],
@@ -1849,6 +1852,9 @@ function codFormView() {
       toast("COD Form settings saved");
       await load();
     };
+  const codEditor = mountCodFormEditor({ form, config: cfg, esc, products:data.products });
+  form.querySelector('[data-cod-pane="general"]').insertAdjacentHTML('beforeend', `<label class="field">Maximum post-purchase offers<select name="postPurchaseLimit">${[1,2,3,4,5].map(n=>`<option value="${n}" ${n===(cfg.postPurchaseLimit||1)?'selected':''}>${n}</option>`).join('')}</select></label>`);
+  form.querySelector('[data-cod-pane="general"]').insertAdjacentHTML('beforeend', `<label class="field">Form display<select name="displayMode">${[['page','Checkout page'],['popup','Popup on product page'],['embedded','Embedded in product page']].map(([value,label])=>`<option value="${value}" ${value===(cfg.displayMode||'page')?'selected':''}>${label}</option>`).join('')}</select></label>`);
   form.onsubmit = async (event) => {
     event.preventDefault();
     try {
@@ -1906,6 +1912,9 @@ function codFormView() {
         addressAutofill: form.elements.addressAutofill.checked,
         saveIncompleteCheckout: form.elements.saveIncompleteCheckout.checked,
         buttonEnabled: form.elements.buttonEnabled.checked,
+        displayMode: form.elements.displayMode.value,
+        postPurchaseLimit: Number(form.elements.postPurchaseLimit.value),
+        ...codEditor.read(),
         fields,
         otp: otpSettings,
         summary,
@@ -1969,6 +1978,10 @@ function codFormView() {
   };
   upsellsView("#cod-upsells");
   downsellsView("#cod-downsells");
+  const tabs = content.querySelector('.settings-section-tabs');
+  tabs.insertAdjacentHTML('beforeend','<button type="button" role="tab" data-cod-section="quantity" aria-selected="false">Quantity offers</button><button type="button" role="tab" data-cod-section="sheets" aria-selected="false">Google Sheets</button><button type="button" role="tab" data-cod-section="shipping" aria-selected="false">Shipping</button>');
+  content.insertAdjacentHTML('beforeend', '<div class="cod-settings-pane" data-cod-pane="quantity" id="cod-quantity-offers"></div><div class="cod-settings-pane" data-cod-pane="sheets"><h2>Google Sheets</h2><a class="button-link primary" href="/campaigns">Open UTM Sheet</a></div><div class="cod-settings-pane" data-cod-pane="shipping"><h2>Shipping rates</h2><a class="button-link primary" href="/settings/shipping">Manage shipping rates</a></div>');
+  bundlesView('#cod-quantity-offers');
   const showCodSection = (section) => {
     codSettingsSection = section;
     document.querySelectorAll("[data-cod-section]").forEach((button) => {
@@ -3555,6 +3568,7 @@ function renderOrderDetail(order) {
   );
   content.innerHTML = `<div class="order-detail-shell"><section class="panel order-detail-summary"><div class="order-detail-heading"><div><span class="eyebrow">${esc(orderChannelLabel(order.channel))}</span><h2>${esc(order.orderNumber)}</h2><p>Placed ${orderDisplayDate(order.createdAt)}</p></div><strong>${rupees(order.totalPaise)}</strong></div><div class="order-detail-statuses"><span><small>Payment</small><b class="status-badge is-${esc(order.paymentStatus)}">${esc(orderStatusLabel(order.paymentStatus))}</b></span><span><small>Fulfillment</small><b class="status-badge is-${esc(order.fulfillmentStatus)}">${esc(orderStatusLabel(order.fulfillmentStatus))}</b></span><span><small>Delivery</small><b>${esc(orderStatusLabel(order.deliveryStatus))}</b></span><span><small>Phone verification</small><b>${esc(orderStatusLabel(order.phoneVerificationStatus || "NOT_REQUIRED"))}</b></span></div><div class="order-detail-actions">${paymentActions}${dispatchAction}${cancelAction}</div>${!activePartners.length && !shipment && order.fulfillmentStatus === "unfulfilled" ? '<p class="notice">Connect and enable a delivery partner in Settings → Shipping before dispatch.</p>' : ""}</section><div class="order-detail-grid"><main><section class="panel"><div class="panel-head"><div><h2>Items</h2><span>${order.items.reduce((sum, item) => sum + Number(item.quantity), 0)} item(s)</span></div></div><div class="order-line-items">${order.items.map((item) => `<article><div><strong>${esc(item.name)}</strong><span>${item.quantity} × ${rupees(item.unitPricePaise)}</span></div><strong>${rupees(item.lineTotalPaise)}</strong></article>`).join("")}</div><dl class="order-totals"><div><dt>Subtotal</dt><dd>${rupees(order.subtotalPaise || order.items.reduce((sum, item) => sum + Number(item.lineTotalPaise), 0))}</dd></div><div><dt>Discount${order.couponCode ? ` · ${esc(order.couponCode)}` : ""}</dt><dd>− ${rupees(order.discountPaise || 0)}</dd></div><div><dt>Shipping${order.shippingMethod ? ` · ${esc(order.shippingMethod)}` : ""}</dt><dd>${rupees(order.shippingPaise || 0)}</dd></div><div class="order-total-row"><dt>Total</dt><dd>${rupees(order.totalPaise)}</dd></div></dl></section><section class="panel"><div class="panel-head"><div><h2>Timeline</h2><span>Auditable order changes</span></div></div><ol class="order-timeline">${order.events.length ? order.events.map((event) => `<li><i></i><div><strong>${esc(orderEventLabel(event))}</strong><span>${event.oldStatus && event.newStatus ? `${esc(orderStatusLabel(event.oldStatus))} → ${esc(orderStatusLabel(event.newStatus))}` : esc(orderStatusLabel(event.newStatus))}</span>${event.note ? `<p>${esc(event.note)}</p>` : ""}<time>${orderDisplayDate(event.createdAt)}</time></div></li>`).join("") : `<li><i></i><div><strong>Order placed</strong><time>${orderDisplayDate(order.createdAt)}</time></div></li>`}</ol></section></main><aside><section class="panel"><h2>Customer</h2><dl class="order-facts"><div><dt>Name</dt><dd>${esc(order.customerName)}</dd></div><div><dt>Phone</dt><dd><a href="tel:${esc(order.customerPhone)}">${esc(order.customerPhone)}</a></dd></div>${order.customerAlternatePhone ? `<div><dt>Alternate phone</dt><dd>${esc(order.customerAlternatePhone)}</dd></div>` : ""}${order.customerEmail ? `<div><dt>Email</dt><dd>${esc(order.customerEmail)}</dd></div>` : ""}</dl></section><section class="panel"><h2>Delivery address</h2><address>${esc(order.customerAddress)}${order.customerAddressLine2 ? `<br>${esc(order.customerAddressLine2)}` : ""}${order.customerLandmark ? `<br>Near ${esc(order.customerLandmark)}` : ""}<br>${esc(order.customerCity)}, ${esc(order.customerState)} ${esc(order.customerPincode)}<br>${esc(order.customerCountry || "India")}</address></section><section class="panel"><h2>Shipment</h2>${shipment ? `<dl class="order-facts"><div><dt>Partner</dt><dd>${esc(shipment.partnerName)}</dd></div><div><dt>AWB / tracking</dt><dd>${esc(shipment.trackingNumber)}</dd></div><div><dt>Status</dt><dd>${esc(orderStatusLabel(shipment.status))}</dd></div></dl>${shipment.trackingUrl ? `<a class="secondary button-link" href="${esc(shipment.trackingUrl)}" target="_blank" rel="noopener">Track shipment</a>` : ""}` : '<p class="muted">Not dispatched yet.</p>'}</section><section class="panel"><h2>Risk and metadata</h2><dl class="order-facts"><div><dt>Bot risk</dt><dd>${esc(orderStatusLabel(order.botRiskLevel || "low"))} · ${Number(order.botRiskScore || 0)}/100</dd></div><div><dt>Payment method</dt><dd>${esc(orderStatusLabel(order.paymentMethod || "cod"))}</dd></div><div><dt>Tags</dt><dd>${(order.tags || []).length ? order.tags.map(esc).join(" · ") : "None"}</dd></div></dl></section></aside></div></div>`;
   const nestedOrderMain = content.querySelector(".order-detail-grid > main");
+  if (order.customFields?.length) content.querySelector('.order-detail-grid > aside')?.insertAdjacentHTML('beforeend', `<section class="panel"><h2>Additional details</h2><dl class="order-facts">${order.customFields.map(field=>`<div><dt>${esc(field.label)}</dt><dd>${esc(typeof field.value==='boolean'?(field.value?'Yes':'No'):field.value)}</dd></div>`).join('')}</dl></section>`);
   if (nestedOrderMain) {
     const orderPrimary = document.createElement("div");
     orderPrimary.className = "order-detail-primary";
@@ -4015,6 +4029,7 @@ function shippingSettingsView() {
           .then(load)
           .catch((error) => toast(error.message))),
   );
+  mountShippingRules({root:content,storeId,products:data.products,api,esc,openForm,reload:load,toast,currency:data.store.currency}).catch(error=>toast(error.message));
   $("#connect-delivery-partner").onclick = () =>
     openForm(
       "Connect Delivery Partner",

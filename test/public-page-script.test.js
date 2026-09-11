@@ -20,6 +20,9 @@ test('published product page and dedicated checkout emit executable scripts', as
   await app.start();
   t.after(() => app.stop());
   const base = `http://127.0.0.1:${app.port}`;
+  for (const path of ['/cod-form-editor.js','/cod-checkout-builder.js','/cod-form-launcher.js']) {
+    const asset=await request(base,path);assert.equal(asset.response.status,200);assert.match(asset.response.headers.get('content-type'),/javascript/);
+  }
   const store = (await request(base, '/api/stores', 'POST', { name: 'Script Store', slug: 'script-store' })).body;
   const product = (await request(base, `/api/stores/${store.id}/products`, 'POST', { name: 'Oil', slug: 'oil', pricePaise: 50000, stock: 10 })).body;
   const page = (await request(base, `/api/stores/${store.id}/pages`, 'POST', { productId: product.id, title: 'Offer', slug: 'offer', body: 'Offer' })).body;
@@ -35,7 +38,7 @@ test('published product page and dedicated checkout emit executable scripts', as
   assert.equal(opened.response.status, 201);
   const checkout = await request(base, `/s/script-store/checkout/${opened.body.id}`);
   assert.match(checkout.body, /id="cod-form"/);
-  const checkoutScripts = [...checkout.body.matchAll(/<script[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
+  const checkoutScripts = [...checkout.body.matchAll(/<script(?![^>]*type="application\/json")[^>]*>([\s\S]*?)<\/script>/g)].map(match => match[1]);
   for (const script of checkoutScripts) assert.doesNotThrow(() => new Function(script));
 });
 
