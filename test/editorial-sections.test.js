@@ -39,15 +39,32 @@ test('new section inputs validate limits, IDs and links',()=>{
   assert.equal(normalizeThemeSettings({design:'botanical',heroAccent:'Fresh every day'}).heroAccent,'Fresh every day');
 });
 test('section typography is validated and rendered without accepting arbitrary CSS',()=>{
-  const [styled]=normalizeThemeSections([{...comparison,headingFont:'serif',headingSize:'large',headingColor:'#A12B3C',headingItalic:true,headingUnderline:true,textFont:'mono',textSize:'small',textColor:'#123456',textBold:true}]);
+  const [styled]=normalizeThemeSections([{...comparison,headingHtml:'<strong>Compare</strong><script>alert(1)</script>',textHtml:'<p>Clear <em>details</em>.</p><ul><li>First</li></ul><a href="javascript:alert(1)">Bad</a><a href="/safe">Safe</a>',headingFont:'garamond',headingSize:'large',headingSizePx:'62',headingWeight:'600',headingLineHeight:'1.2',headingLetterSpacing:'0.5',headingCase:'uppercase',headingColor:'#A12B3C',headingBackground:'#F8F0DD',headingItalic:true,headingUnderline:true,headingStrike:true,textFont:'mono',textSize:'small',textSizePx:'17',textWeight:'500',textLineHeight:'1.8',textLetterSpacing:'0.2',textCase:'capitalize',textColor:'#123456',textBackground:'#ffffff',textBold:true}]);
   assert.equal(styled.headingColor,'#a12b3c');
+  assert.equal(styled.headingSizePx,62);
+  assert.equal(styled.textLineHeight,1.8);
+  assert.match(styled.headingHtml,/<strong>Compare<\/strong>/);
+  assert.doesNotMatch(styled.headingHtml,/script|alert/);
+  assert.match(styled.textHtml,/<ul><li>First<\/li><\/ul>/);
+  assert.doesNotMatch(styled.textHtml,/javascript:/);
+  assert.match(styled.textHtml,/href="\/safe"/);
   const html=renderCustomSection(styled,escape);
   assert.match(html,/has-heading-font/);
   assert.match(html,/section-heading-italic/);
   assert.match(html,/section-heading-underline/);
+  assert.match(html,/section-heading-strike/);
   assert.match(html,/section-text-bold/);
-  assert.match(html,/--section-heading-font:Georgia/);
+  assert.match(html,/--section-heading-font:Garamond/);
+  assert.match(html,/--section-heading-size:62px/);
+  assert.match(html,/--section-heading-weight:600/);
+  assert.match(html,/--section-heading-line-height:1.2/);
+  assert.match(html,/--section-heading-letter-spacing:0.5px/);
+  assert.match(html,/--section-heading-background:#f8f0dd/);
   assert.match(html,/--section-text-color:#123456/);
+  assert.match(html,/<strong>Compare<\/strong>/);
+  assert.match(html,/class="theme-section-intro theme-rich-content"/);
+  assert.throws(()=>normalizeThemeSections([{...comparison,headingSizePx:121}]),/Exact heading size is invalid/);
+  assert.throws(()=>normalizeThemeSections([{...comparison,textLineHeight:.7}]),/Body text line height is invalid/);
 });
 test('gallery images and editorial settings survive save, partial update and publication without changing the live draft boundary',async t=>{
   const app=createApp({db:createDatabase(':memory:'),port:0,merchantAuth:false,domainSyncIntervalMs:0,otpProviders:{},googleAuthProvider:null,accountEmailProvider:null});

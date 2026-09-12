@@ -2,18 +2,40 @@
 .theme-custom-section p { white-space:pre-line; }
 .theme-custom-section.theme-contrast .theme-eyebrow,.theme-custom-section.theme-contrast .theme-section-intro { color:inherit; }
 .theme-custom-section.align-center .theme-section-copy { text-align:center; }
+.theme-custom-section.align-right { text-align:right; }
+.theme-custom-section.align-right .theme-section-copy { text-align:right; }
+.theme-custom-section.align-right .theme-section-intro { margin-left:auto!important; }
 .theme-custom-section.has-heading-font :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { font-family:var(--section-heading-font)!important; }
 .theme-custom-section.has-heading-size h2 { font-size:var(--section-heading-size)!important; }
 .theme-custom-section.has-heading-color :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { color:var(--section-heading-color)!important; }
+.theme-custom-section.has-heading-background :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { background:var(--section-heading-background)!important; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+.theme-custom-section.has-heading-weight :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { font-weight:var(--section-heading-weight)!important; }
+.theme-custom-section.has-heading-line-height :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { line-height:var(--section-heading-line-height)!important; }
+.theme-custom-section.has-heading-letter-spacing :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { letter-spacing:var(--section-heading-letter-spacing)!important; }
+.theme-custom-section.has-heading-case :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { text-transform:var(--section-heading-case)!important; }
 .theme-custom-section.section-heading-bold :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { font-weight:700!important; }
 .theme-custom-section.section-heading-italic :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { font-style:italic!important; }
-.theme-custom-section.section-heading-underline :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:.14em; }
+.theme-custom-section.section-heading-underline :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { text-decoration-line:underline; text-decoration-thickness:1px; text-underline-offset:.14em; }
+.theme-custom-section.section-heading-strike :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { text-decoration-line:line-through; }
+.theme-custom-section.section-heading-underline.section-heading-strike :is(.theme-eyebrow,h2,h3,.theme-faq-list summary,.theme-comparison th) { text-decoration-line:underline line-through; }
 .theme-custom-section.has-text-font :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { font-family:var(--section-text-font)!important; }
 .theme-custom-section.has-text-size :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { font-size:var(--section-text-size)!important; }
 .theme-custom-section.has-text-color :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { color:var(--section-text-color)!important; opacity:1; }
+.theme-custom-section.has-text-background :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { background:var(--section-text-background)!important; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
+.theme-custom-section.has-text-weight :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { font-weight:var(--section-text-weight)!important; }
+.theme-custom-section.has-text-line-height :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { line-height:var(--section-text-line-height)!important; }
+.theme-custom-section.has-text-letter-spacing :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { letter-spacing:var(--section-text-letter-spacing)!important; }
+.theme-custom-section.has-text-case :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { text-transform:var(--section-text-case)!important; }
 .theme-custom-section.section-text-bold :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { font-weight:700!important; }
 .theme-custom-section.section-text-italic :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { font-style:italic!important; }
-.theme-custom-section.section-text-underline :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { text-decoration:underline; text-decoration-thickness:1px; text-underline-offset:.14em; }
+.theme-custom-section.section-text-underline :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { text-decoration-line:underline; text-decoration-thickness:1px; text-underline-offset:.14em; }
+.theme-custom-section.section-text-strike :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { text-decoration-line:line-through; }
+.theme-custom-section.section-text-underline.section-text-strike :is(.theme-section-intro,.theme-benefit-grid p,.theme-image-grid p,.theme-testimonial-grid blockquote,.theme-testimonial-grid figcaption,.theme-faq-list p,.theme-comparison td) { text-decoration-line:underline line-through; }
+.theme-rich-content>p+p { margin-top:.85em; }
+.theme-rich-content :is(ul,ol) { margin:1em 0; padding-left:1.5em; text-align:left; }
+.theme-rich-content li+li { margin-top:.35em; }
+.theme-rich-content blockquote { margin:1em 0; padding:.25em 0 .25em 1em; border-left:3px solid currentColor; font-style:italic; }
+.theme-rich-content a { color:inherit; text-decoration:underline; text-underline-offset:.14em; }
 .theme-image-grid { display:grid; grid-template-columns:repeat(var(--section-columns,4),minmax(0,1fr)); gap:24px; margin-top:36px; }
 .theme-image-grid article { min-width:0; }
 .theme-image-grid article>img,.theme-image-grid .theme-image-placeholder { width:100%; aspect-ratio:4/5; object-fit:cover; border-radius:var(--store-card-radius,8px); }

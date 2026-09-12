@@ -62,10 +62,10 @@ export function editorBlocks(id, form) {
   if (coreBlocks[id]) return coreBlocks[id];
   const panel = form.querySelector(`[data-theme-section-id="${id}"]`);
   if (!panel) return [];
-  const blocks = [{key:'heading',label:'Heading',fields:field('heading','eyebrow','headingFont','headingSize','headingColor','headingBold','headingItalic','headingUnderline'),preview:'h2',icon:'type'}];
+  const blocks = [{key:'heading',label:'Heading',fields:field('heading','headingHtml','eyebrow','headingFont','headingSize','headingSizePx','headingWeight','headingLineHeight','headingLetterSpacing','headingCase','headingColor','headingBackground','headingBold','headingItalic','headingUnderline','headingStrike'),preview:'h2',icon:'type'}];
   const type = panel.dataset.themeSectionType;
   if (['rich-text','image-with-text'].includes(type)) {
-    blocks.push({key:'text',label:'Text',fields:field('text','textFont','textSize','textColor','textBold','textItalic','textUnderline'),preview:'.theme-section-inner > p,.theme-section-copy > p',icon:'align-left'});
+    blocks.push({key:'text',label:'Text',fields:field('text','textHtml','textFont','textSize','textSizePx','textWeight','textLineHeight','textLetterSpacing','textCase','textColor','textBackground','textBold','textItalic','textUnderline','textStrike'),preview:'.theme-section-intro',icon:'align-left'});
     blocks.push({key:'button',label:'Button',fields:`${field('buttonText','buttonUrl')},[data-section-destination]`,preview:'.theme-section-button',icon:'mouse-pointer-2'});
   }
   if (type === 'image-with-text') blocks.unshift({key:'image',label:'Image',fields:'[data-section-image]',preview:'.theme-section-inner > img',icon:'image'});

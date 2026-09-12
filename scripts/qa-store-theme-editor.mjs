@@ -27,6 +27,13 @@ page.on('console',message=>{if(message.type()==='error')errors.push(message.text
 const frame=()=>page.locator('#store-website-preview').contentFrame();
 const panel=()=>page.locator('[data-theme-section-id]:not([hidden])');
 const settle=()=>page.evaluate(()=>new Promise(resolve=>requestAnimationFrame(()=>requestAnimationFrame(resolve))));
+const selectEditorText=(editor,start,end)=>editor.evaluate((element,range)=>{
+  const walker=document.createTreeWalker(element,NodeFilter.SHOW_TEXT),selection=getSelection(),selectionRange=document.createRange();
+  let node,offset=0,startNode=null,endNode=null,startOffset=0,endOffset=0;
+  while((node=walker.nextNode())){const next=offset+node.nodeValue.length;if(startNode===null&&range.start<=next){startNode=node;startOffset=Math.max(0,range.start-offset);}if(range.end<=next){endNode=node;endOffset=Math.max(0,range.end-offset);break;}offset=next;}
+  if(!startNode||!endNode)throw Error('Could not select editor text');
+  selectionRange.setStart(startNode,startOffset);selectionRange.setEnd(endNode,endOffset);selection.removeAllRanges();selection.addRange(selectionRange);
+},{start,end});
 const checkLayout=async(name)=>{
   await settle();
   const sizes=await page.evaluate(()=>{
@@ -84,19 +91,19 @@ try {
   assert.equal(await panel().locator('[data-theme-block]').first().locator('[data-section-field="question"]').inputValue(),'Common question','Dragging in the section tree reorders the actual block');
   await treeBlock(1).dragTo(treeBlock(0),{targetPosition:{x:20,y:5}});
   await page.locator(`[data-home-section="${faqId}"] > [data-store-section]`).click();
-  await panel().locator('[data-section-field="text"]').first().fill('Answers about delivery and returns.');
+  await panel().locator('[data-rich-text-editor="text"]').fill('Answers about delivery and returns.');
   const faq=frame().locator(`[data-store-editor-section="${faqId}"]`);
   assert.equal(await faq.locator('.theme-section-intro').textContent(),'Answers about delivery and returns.');
   await settle();
   await faq.evaluate(section=>{window.qaSection=section;window.qaDetails=section.querySelector('details');window.qaDetails.open=true;});
   const scrollBefore=await frame().locator('body').evaluate(()=>scrollY);
-  await panel().locator('[data-section-field="heading"]').first().fill('Your questions answered');
+  await panel().locator('[data-rich-text-editor="heading"]').fill('Your questions answered');
   const stable=await faq.evaluate(section=>({sameSection:section===window.qaSection,sameDetails:section.querySelector('details')===window.qaDetails,open:section.querySelector('details').open,scroll:scrollY}));
   assert.ok(stable.sameSection&&stable.sameDetails&&stable.open,JSON.stringify(stable));
   assert.ok(Math.abs(stable.scroll-scrollBefore)<2,'Typing must preserve preview scroll');
-  await panel().locator('[data-section-field="text"]').first().fill('');
+  await panel().locator('[data-rich-text-editor="text"]').fill('');
   assert.equal(await faq.evaluate(section=>section.querySelector('details')===window.qaDetails),true,'Removing optional introduction must preserve the question DOM');
-  await panel().locator('[data-section-field="text"]').first().fill('Answers about delivery and returns.');
+  await panel().locator('[data-rich-text-editor="text"]').fill('Answers about delivery and returns.');
   assert.equal(await faq.evaluate(section=>section.querySelector('details')===window.qaDetails),true,'Adding optional introduction must preserve the question DOM');
   await faq.locator('summary').first().click();
   assert.equal(await page.locator('#store-section-title').textContent(),'How do I return an order?');
@@ -113,20 +120,51 @@ try {
   const addedId=await panel().getAttribute('data-theme-section-id');
   const order=JSON.parse(await page.locator('[name="homeSectionOrder"]').inputValue());
   assert.equal(order[order.indexOf('banner')+1],addedId);
-  await panel().locator('[data-section-field="headingFont"]').selectOption('serif');
+  const headingEditor=panel().locator('[data-rich-text-editor="heading"]'),bodyEditor=panel().locator('[data-rich-text-editor="text"]');
+  await headingEditor.fill('A precise heading');
+  await selectEditorText(headingEditor,2,9);
+  await headingEditor.locator('..').getByRole('button',{name:'Bold',exact:true}).click();
+  assert.match(await panel().locator('[data-section-field="headingHtml"]').inputValue(),/<b>precise<\/b>/i);
+  await bodyEditor.fill('Fast\nSimple');
+  await selectEditorText(bodyEditor,0,10);
+  await bodyEditor.locator('..').getByRole('button',{name:'Bulleted list',exact:true}).click();
+  assert.match(await panel().locator('[data-section-field="textHtml"]').inputValue(),/<ul>/i);
+  await selectEditorText(bodyEditor,0,4);
+  await bodyEditor.locator('..').getByRole('button',{name:'Insert link',exact:true}).click();
+  await bodyEditor.locator('..').locator('[data-rich-link-url]').fill('/pages/details');
+  await bodyEditor.locator('..').getByRole('button',{name:'Apply',exact:true}).click();
+  assert.match(await panel().locator('[data-section-field="textHtml"]').inputValue(),/href="\/pages\/details"/i);
+  await panel().locator('[data-section-field="headingFont"]').selectOption('garamond');
   await panel().locator('[data-section-field="headingSize"]').selectOption('large');
+  await panel().locator('[data-typography-prefix="heading"] summary').click();
+  await panel().locator('[data-section-field="headingSizePx"]').fill('62');
+  await panel().locator('[data-section-field="headingWeight"]').selectOption('600');
+  await panel().locator('[data-section-field="headingLineHeight"]').fill('1.2');
+  await panel().locator('[data-section-field="headingLetterSpacing"]').fill('0.5');
+  await panel().locator('[data-section-field="headingCase"]').selectOption('uppercase');
   await panel().getByRole('button',{name:'Italic heading',exact:true}).click();
   await panel().getByRole('button',{name:'Underline heading',exact:true}).click();
+  await panel().getByRole('button',{name:'Strikethrough heading',exact:true}).click();
   await panel().getByRole('button',{name:'Bold body text',exact:true}).click();
   await panel().locator('[data-section-color-picker]').first().evaluate(input=>{input.value='#a12b3c';input.dispatchEvent(new Event('input',{bubbles:true}));});
-  const richTypography=await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>({classes:section.className,font:section.style.getPropertyValue('--section-heading-font'),size:section.style.getPropertyValue('--section-heading-size'),color:section.style.getPropertyValue('--section-heading-color')}));
+  await panel().locator('[data-section-color-picker]').nth(1).evaluate(input=>{input.value='#f8f0dd';input.dispatchEvent(new Event('input',{bubbles:true}));});
+  const richTypography=await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>({classes:section.className,font:section.style.getPropertyValue('--section-heading-font'),size:section.style.getPropertyValue('--section-heading-size'),weight:section.style.getPropertyValue('--section-heading-weight'),lineHeight:section.style.getPropertyValue('--section-heading-line-height'),spacing:section.style.getPropertyValue('--section-heading-letter-spacing'),color:section.style.getPropertyValue('--section-heading-color'),background:section.style.getPropertyValue('--section-heading-background'),heading:section.querySelector('h2').innerHTML,body:section.querySelector('.theme-rich-content').innerHTML}));
   assert.match(richTypography.classes,/section-heading-italic/);
   assert.match(richTypography.classes,/section-heading-underline/);
+  assert.match(richTypography.classes,/section-heading-strike/);
   assert.match(richTypography.classes,/section-text-bold/);
-  assert.match(richTypography.font,/Georgia/);
-  assert.equal(richTypography.size,'56px');
+  assert.match(richTypography.font,/Garamond/);
+  assert.equal(richTypography.size,'62px');
+  assert.equal(richTypography.weight,'600');
+  assert.equal(richTypography.lineHeight,'1.2');
+  assert.equal(richTypography.spacing,'0.5px');
   assert.equal(richTypography.color,'#a12b3c');
-  await page.screenshot({path:`${output}/section-typography.png`});
+  assert.equal(richTypography.background,'#f8f0dd');
+  assert.match(richTypography.heading,/<b>precise<\/b>/i);
+  assert.match(richTypography.body,/<ul>/i);
+  assert.match(richTypography.body,/href="\/pages\/details"/i);
+  await headingEditor.scrollIntoViewIfNeeded();
+  await page.screenshot({path:`${output}/section-rich-text.png`});
   await page.getByRole('button',{name:'Add section',exact:true}).click();
   await page.getByRole('button',{name:'Image with text',exact:true}).click();
   await panel().locator('[data-section-image]').setInputFiles({name:png.name,mimeType:png.type,buffer:Buffer.from(png.data,'base64')});
@@ -153,6 +191,9 @@ try {
     assert.equal(await frame().locator(`[data-store-editor-section="${faqId}"] summary`).first().textContent(),'How do I return an order?');
     assert.match(await frame().locator(`[data-store-editor-section="${addedId}"]`).getAttribute('class'),/section-heading-italic/);
     assert.equal(await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>section.style.getPropertyValue('--section-heading-color')),'#a12b3c');
+    assert.equal(await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>section.style.getPropertyValue('--section-heading-size')),'62px');
+    assert.match(await frame().locator(`[data-store-editor-section="${addedId}"] h2`).innerHTML(),/<b>precise<\/b>/i);
+    assert.match(await frame().locator(`[data-store-editor-section="${addedId}"] .theme-rich-content`).innerHTML(),/href="\/pages\/details"/i);
     assert.equal(await frame().locator(`[data-store-editor-section="${imageCopy}"] img`).evaluate(img=>img.complete&&img.naturalWidth>0),true,'Duplicated image must survive save and reload');
   }
   await page.setViewportSize({width:1024,height:768});
@@ -161,6 +202,9 @@ try {
   await page.setViewportSize({width:390,height:844});
   await page.getByRole('tab',{name:'Sections'}).click();
   await checkLayout('mobile-tree');
+  await page.locator(`[data-home-section="${addedId}"] > [data-store-section]`).click();
+  await checkLayout('mobile-rich-text');
+  await page.getByRole('tab',{name:'Sections'}).click();
   await page.locator('[data-block-section="banner"][data-store-block="heading"]').click();
   await checkLayout('mobile-settings');
   assert.equal(await page.locator('.store-section-nav').isVisible(),false);
@@ -170,7 +214,7 @@ try {
   await checkLayout('mobile-preview');
   assert.equal(await page.locator('.store-settings-area').isVisible(),false);
   assert.deepEqual(errors,[]);
-  console.log(JSON.stringify({passed:true,checks:['persistent tree and right inspector','preview block selection','contextual fields','instant preview updates','search and empty state','block add and reorder','DOM and FAQ state preserved','scroll preserved','undo and redo','insert at preview position','theme settings','preview navigation contained','save and reload','desktop tablet mobile layouts'],screenshots:output},null,2));
+  console.log(JSON.stringify({passed:true,checks:['persistent tree and right inspector','preview block selection','contextual fields','instant preview updates','search and empty state','block add and reorder','DOM and FAQ state preserved','scroll preserved','undo and redo','insert at preview position','rich text selection tools','advanced typography','safe links and lists','theme settings','preview navigation contained','save and reload','desktop tablet mobile layouts'],screenshots:output},null,2));
 } finally {
   await browser.close();
   if(app)await app.stop();

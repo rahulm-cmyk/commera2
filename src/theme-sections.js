@@ -1,4 +1,5 @@
 import { renderSection } from '../public/store-section-renderer.js';
+import sanitizeHtml from 'sanitize-html';
 const clean = value => String(value ?? '').trim();
 
 export const customSectionTypes = ['rich-text','image-with-text','benefits','testimonials','faq','image-grid','comparison'];
@@ -26,6 +27,24 @@ const color = (value,label) => {
   const output=clean(value);
   if(output&&!/^#[0-9a-f]{6}$/i.test(output))throw Error(`${label} must be a six-digit color`);
   return output.toLowerCase();
+};
+const optionalNumber = (value,label,min,max,integer=false) => {
+  if(value===undefined||value===null||String(value).trim()==='')return '';
+  const output=Number(value);
+  if(!Number.isFinite(output)||output<min||output>max||(integer&&!Number.isInteger(output)))throw Error(`${label} is invalid`);
+  return integer?output:Math.round(output*10)/10;
+};
+const richText = (value,label,inline=false) => {
+  const input=String(value??'');
+  const max=inline?3000:12000;
+  if(input.length>max)throw Error(`${label} formatting is too long`);
+  return sanitizeHtml(input,{
+    allowedTags:inline?['b','strong','i','em','u','s','a']:['p','br','b','strong','i','em','u','s','a','ul','ol','li','blockquote'],
+    allowedAttributes:{a:['href','title']},
+    allowedSchemes:['http','https','mailto','tel'],
+    allowProtocolRelative:false,
+    disallowedTagsMode:'discard',
+  }).trim();
 };
 const link = value => {
   const output=clean(value);
@@ -57,24 +76,40 @@ export function normalizeThemeSections(value,current=[],normalizeImage) {
       id,type,
       visible:bool(input.visible,true),
       heading:short(input.heading,`${sectionTypeLabels[type]} heading`,160),
+      headingHtml:richText(input.headingHtml,`${sectionTypeLabels[type]} heading`,true),
       text:text(input.text,`${sectionTypeLabels[type]} text`,1600),
-      alignment:choice(input.alignment,['left','center'],'left'),
+      textHtml:richText(input.textHtml,`${sectionTypeLabels[type]} text`),
+      alignment:choice(input.alignment,['left','center','right'],'left'),
       colorScheme:choice(input.colorScheme,['default','accent','contrast'],'default'),
       fullWidth:bool(input.fullWidth,false),
       eyebrow:short(input.eyebrow,'Small heading',100),
       layout:choice(input.layout,['cards','numbered','strip','timeline','collage','rows','logos','slider'],'cards'),
-      headingFont:choice(input.headingFont,['theme','sans','geometric','serif','classic','mono'],'theme'),
+      headingFont:choice(input.headingFont,['theme','sans','arial','helvetica','geometric','verdana','serif','garamond','classic','palatino','mono'],'theme'),
       headingSize:choice(input.headingSize,['theme','small','medium','large'],'theme'),
+      headingSizePx:optionalNumber(input.headingSizePx,'Exact heading size',12,120,true),
+      headingWeight:choice(input.headingWeight,['theme','300','400','500','600','700','800'],'theme'),
+      headingLineHeight:optionalNumber(input.headingLineHeight,'Heading line height',0.8,3),
+      headingLetterSpacing:optionalNumber(input.headingLetterSpacing,'Heading letter spacing',-3,12),
+      headingCase:choice(input.headingCase,['theme','uppercase','lowercase','capitalize'],'theme'),
       headingColor:color(input.headingColor,'Heading color'),
+      headingBackground:color(input.headingBackground,'Heading background'),
       headingBold:bool(input.headingBold,false),
       headingItalic:bool(input.headingItalic,false),
       headingUnderline:bool(input.headingUnderline,false),
-      textFont:choice(input.textFont,['theme','sans','geometric','serif','classic','mono'],'theme'),
+      headingStrike:bool(input.headingStrike,false),
+      textFont:choice(input.textFont,['theme','sans','arial','helvetica','geometric','verdana','serif','garamond','classic','palatino','mono'],'theme'),
       textSize:choice(input.textSize,['theme','small','medium','large'],'theme'),
+      textSizePx:optionalNumber(input.textSizePx,'Exact body text size',10,48,true),
+      textWeight:choice(input.textWeight,['theme','300','400','500','600','700','800'],'theme'),
+      textLineHeight:optionalNumber(input.textLineHeight,'Body text line height',0.8,3),
+      textLetterSpacing:optionalNumber(input.textLetterSpacing,'Body text letter spacing',-3,12),
+      textCase:choice(input.textCase,['theme','uppercase','lowercase','capitalize'],'theme'),
       textColor:color(input.textColor,'Body text color'),
+      textBackground:color(input.textBackground,'Body text background'),
       textBold:bool(input.textBold,false),
       textItalic:bool(input.textItalic,false),
       textUnderline:bool(input.textUnderline,false),
+      textStrike:bool(input.textStrike,false),
     };
     if(type==='rich-text')Object.assign(section,{buttonText:short(input.buttonText,'Button text',60),buttonUrl:link(input.buttonUrl)});
     if(type==='image-with-text') {
