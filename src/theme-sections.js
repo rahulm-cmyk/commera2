@@ -22,6 +22,11 @@ const short = (value,label,max=120) => {
 const text = (value,label,max=1200) => short(value,label,max);
 const bool = (value,fallback=false) => value===undefined?fallback:Boolean(value);
 const choice = (value,allowed,fallback) => allowed.includes(clean(value))?clean(value):fallback;
+const color = (value,label) => {
+  const output=clean(value);
+  if(output&&!/^#[0-9a-f]{6}$/i.test(output))throw Error(`${label} must be a six-digit color`);
+  return output.toLowerCase();
+};
 const link = value => {
   const output=clean(value);
   if(output&&!/^(?:https?:\/\/|\/|#)/i.test(output))throw Error('Section links must use HTTPS, HTTP, or a store-relative path');
@@ -58,6 +63,18 @@ export function normalizeThemeSections(value,current=[],normalizeImage) {
       fullWidth:bool(input.fullWidth,false),
       eyebrow:short(input.eyebrow,'Small heading',100),
       layout:choice(input.layout,['cards','numbered','strip','timeline','collage','rows','logos','slider'],'cards'),
+      headingFont:choice(input.headingFont,['theme','sans','geometric','serif','classic','mono'],'theme'),
+      headingSize:choice(input.headingSize,['theme','small','medium','large'],'theme'),
+      headingColor:color(input.headingColor,'Heading color'),
+      headingBold:bool(input.headingBold,false),
+      headingItalic:bool(input.headingItalic,false),
+      headingUnderline:bool(input.headingUnderline,false),
+      textFont:choice(input.textFont,['theme','sans','geometric','serif','classic','mono'],'theme'),
+      textSize:choice(input.textSize,['theme','small','medium','large'],'theme'),
+      textColor:color(input.textColor,'Body text color'),
+      textBold:bool(input.textBold,false),
+      textItalic:bool(input.textItalic,false),
+      textUnderline:bool(input.textUnderline,false),
     };
     if(type==='rich-text')Object.assign(section,{buttonText:short(input.buttonText,'Button text',60),buttonUrl:link(input.buttonUrl)});
     if(type==='image-with-text') {

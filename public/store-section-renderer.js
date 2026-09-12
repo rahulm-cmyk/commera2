@@ -7,7 +7,14 @@ export function renderSection(section, escape) {
   const e=value=>escape(String(value??''));
   const image=(asset,alt)=>sectionImageSource(asset)?`<img src="${e(sectionImageSource(asset))}" alt="${e(alt)}" loading="lazy" decoding="async">`:'<div class="theme-image-placeholder" aria-hidden="true"></div>';
   const tag=section.type==='image-with-text'?'theme-image-text':`theme-${section.type}`;
-  const classes=`theme-custom-section ${tag}${section.fullWidth?' is-full-width':''} theme-${e(section.colorScheme)} align-${e(section.alignment)} layout-${e(section.layout||'cards')}${section.type==='image-with-text'?` image-${e(section.imagePosition)}`:''}`;
+  const fonts={sans:'Arial,Helvetica,sans-serif',geometric:'Trebuchet MS,Arial,sans-serif',serif:'Georgia,Times New Roman,serif',classic:'Times New Roman,Times,serif',mono:'Consolas,Courier New,monospace'};
+  const headingSizes={small:'32px',medium:'44px',large:'56px'},textSizes={small:'13px',medium:'16px',large:'20px'};
+  const typographyClasses=[
+    fonts[section.headingFont]&&'has-heading-font',headingSizes[section.headingSize]&&'has-heading-size',/^#[0-9a-f]{6}$/i.test(section.headingColor||'')&&'has-heading-color',section.headingBold&&'section-heading-bold',section.headingItalic&&'section-heading-italic',section.headingUnderline&&'section-heading-underline',
+    fonts[section.textFont]&&'has-text-font',textSizes[section.textSize]&&'has-text-size',/^#[0-9a-f]{6}$/i.test(section.textColor||'')&&'has-text-color',section.textBold&&'section-text-bold',section.textItalic&&'section-text-italic',section.textUnderline&&'section-text-underline',
+  ].filter(Boolean).join(' ');
+  const typographyStyle=[fonts[section.headingFont]&&`--section-heading-font:${fonts[section.headingFont]}`,headingSizes[section.headingSize]&&`--section-heading-size:${headingSizes[section.headingSize]}`,/^#[0-9a-f]{6}$/i.test(section.headingColor||'')&&`--section-heading-color:${section.headingColor}`,fonts[section.textFont]&&`--section-text-font:${fonts[section.textFont]}`,textSizes[section.textSize]&&`--section-text-size:${textSizes[section.textSize]}`,/^#[0-9a-f]{6}$/i.test(section.textColor||'')&&`--section-text-color:${section.textColor}`].filter(Boolean).join(';');
+  const classes=`theme-custom-section ${tag}${section.fullWidth?' is-full-width':''} theme-${e(section.colorScheme)} align-${e(section.alignment)} layout-${e(section.layout||'cards')}${section.type==='image-with-text'?` image-${e(section.imagePosition)}`:''}${typographyClasses?` ${typographyClasses}`:''}`;
   const eyebrow=section.eyebrow?`<span class="theme-eyebrow">${e(section.eyebrow)}</span>`:'';
   const heading=`${eyebrow}${section.heading?`<h2>${e(section.heading)}</h2>`:''}`;
   const intro=section.text?`<p class="theme-section-intro">${e(section.text)}</p>`:'';
@@ -21,7 +28,7 @@ export function renderSection(section, escape) {
   if(section.type==='testimonials')content=`${heading}<div class="theme-testimonial-grid">${items.map(item=>`<figure><blockquote>${e(item.quote)}</blockquote><figcaption>${e(item.name)}</figcaption></figure>`).join('')}</div>`;
   if(section.type==='faq')content=`${heading}${intro}<div class="theme-faq-list">${items.map(item=>`<details><summary>${e(item.question)}</summary><p>${e(item.answer)}</p></details>`).join('')}</div>`;
   if(section.type==='comparison')content=`${heading}${intro}<div class="theme-comparison-wrap"><table class="theme-comparison"><thead><tr><th scope="col">Feature</th><th scope="col">${e(section.columnHeading||'Our product')}</th><th scope="col">${e(section.otherHeading||'Other products')}</th></tr></thead><tbody>${items.map(item=>`<tr><th scope="row">${e(item.heading)}</th><td>${e(item.text)}</td><td>${e(item.other)}</td></tr>`).join('')}</tbody></table></div>`;
-  return `<section id="${e(section.id)}" class="${classes}" data-store-editor-section="${e(section.id)}"${section.visible?'':' hidden'}><div class="theme-section-inner">${content}</div></section>`;
+  return `<section id="${e(section.id)}" class="${classes}"${typographyStyle?` style="${e(typographyStyle)}"`:''} data-store-editor-section="${e(section.id)}"${section.visible?'':' hidden'}><div class="theme-section-inner">${content}</div></section>`;
 }
 
 export function botanicalHeroExtras(settings, escape) {

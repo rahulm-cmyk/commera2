@@ -113,6 +113,20 @@ try {
   const addedId=await panel().getAttribute('data-theme-section-id');
   const order=JSON.parse(await page.locator('[name="homeSectionOrder"]').inputValue());
   assert.equal(order[order.indexOf('banner')+1],addedId);
+  await panel().locator('[data-section-field="headingFont"]').selectOption('serif');
+  await panel().locator('[data-section-field="headingSize"]').selectOption('large');
+  await panel().getByRole('button',{name:'Italic heading',exact:true}).click();
+  await panel().getByRole('button',{name:'Underline heading',exact:true}).click();
+  await panel().getByRole('button',{name:'Bold body text',exact:true}).click();
+  await panel().locator('[data-section-color-picker]').first().evaluate(input=>{input.value='#a12b3c';input.dispatchEvent(new Event('input',{bubbles:true}));});
+  const richTypography=await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>({classes:section.className,font:section.style.getPropertyValue('--section-heading-font'),size:section.style.getPropertyValue('--section-heading-size'),color:section.style.getPropertyValue('--section-heading-color')}));
+  assert.match(richTypography.classes,/section-heading-italic/);
+  assert.match(richTypography.classes,/section-heading-underline/);
+  assert.match(richTypography.classes,/section-text-bold/);
+  assert.match(richTypography.font,/Georgia/);
+  assert.equal(richTypography.size,'56px');
+  assert.equal(richTypography.color,'#a12b3c');
+  await page.screenshot({path:`${output}/section-typography.png`});
   await page.getByRole('button',{name:'Add section',exact:true}).click();
   await page.getByRole('button',{name:'Image with text',exact:true}).click();
   await panel().locator('[data-section-image]').setInputFiles({name:png.name,mimeType:png.type,buffer:Buffer.from(png.data,'base64')});
@@ -137,6 +151,8 @@ try {
     await page.reload({waitUntil:'networkidle'});
     assert.equal(await frame().locator('.store-home-hero-copy h1').textContent(),'A smoother store editor');
     assert.equal(await frame().locator(`[data-store-editor-section="${faqId}"] summary`).first().textContent(),'How do I return an order?');
+    assert.match(await frame().locator(`[data-store-editor-section="${addedId}"]`).getAttribute('class'),/section-heading-italic/);
+    assert.equal(await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>section.style.getPropertyValue('--section-heading-color')),'#a12b3c');
     assert.equal(await frame().locator(`[data-store-editor-section="${imageCopy}"] img`).evaluate(img=>img.complete&&img.naturalWidth>0),true,'Duplicated image must survive save and reload');
   }
   await page.setViewportSize({width:1024,height:768});

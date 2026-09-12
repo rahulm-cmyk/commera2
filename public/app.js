@@ -1706,8 +1706,17 @@ function storeView() {
     const add=panel.querySelector('[data-theme-block-add]');if(add)add.disabled=blocks.length>=8;
   };
   homeForm.querySelectorAll('[data-theme-section-id]').forEach(updateThemeBlockControls);
+  homeForm.addEventListener('input',event=>{
+    const picker=event.target.closest('[data-section-color-picker]');if(!picker)return;
+    const holder=picker.closest('[data-section-color-control]'),value=holder.querySelector('[data-section-field]');
+    value.value=picker.value.toLowerCase();holder.classList.add('is-custom');holder.querySelector('[data-section-color-reset]').disabled=false;
+  });
   homeForm.addEventListener('click',async event=>{
     const panel=event.target.closest('[data-theme-section-id]');if(!panel)return;
+    const styleToggle=event.target.closest('[data-section-style-toggle]');
+    if(styleToggle){const input=panel.querySelector(`[data-section-field="${styleToggle.dataset.sectionStyleToggle}"]`);input.checked=!input.checked;styleToggle.setAttribute('aria-pressed',String(input.checked));input.dispatchEvent(new Event('input',{bubbles:true}));return;}
+    const colorReset=event.target.closest('[data-section-color-reset]');
+    if(colorReset){const holder=colorReset.closest('[data-section-color-control]'),input=holder.querySelector('[data-section-field]');input.value='';holder.classList.remove('is-custom');colorReset.disabled=true;input.dispatchEvent(new Event('input',{bubbles:true}));return;}
     const block=event.target.closest('[data-theme-block]'),move=event.target.closest('[data-theme-block-move]');
     if(move&&block){if(move.dataset.themeBlockMove==='up'&&block.previousElementSibling)block.parentElement.insertBefore(block,block.previousElementSibling);if(move.dataset.themeBlockMove==='down'&&block.nextElementSibling)block.parentElement.insertBefore(block.nextElementSibling,block);updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId,{blockKey:`block-${[...block.parentElement.children].indexOf(block)}`});return;}
     if(event.target.closest('[data-theme-block-remove]')){block?.remove();updateThemeBlockControls(panel);homeForm.dispatchEvent(new Event('input',{bubbles:true}));showStoreSection(panel.dataset.themeSectionId);return;}

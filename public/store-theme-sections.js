@@ -37,9 +37,11 @@ export const themeSectionLabel=type=>themeSectionTypeLabels[type]||'Section';
 const field=(name,label,value='',kind='input')=>`<label class="field">${label}${kind==='textarea'?`<textarea data-section-field="${name}" rows="4">${value}</textarea>`:`<input data-section-field="${name}" value="${value}">`}</label>`;
 const option=(value,label,selected)=>`<option value="${value}" ${selected===value?'selected':''}>${label}</option>`;
 const blockTypes=['benefits','testimonials','faq','image-grid','comparison'];
+const fontChoices=[['theme','Theme font'],['sans','Modern sans'],['geometric','Geometric sans'],['serif','Editorial serif'],['classic','Classic serif'],['mono','Monospace']];
+const sizeChoices=[['theme','Theme size'],['small','Small'],['medium','Medium'],['large','Large']];
 
 export function newThemeSection(type,preset={}) {
-  const common={id:`section-${crypto.randomUUID().toLowerCase()}`,type,visible:true,heading:themeSectionLabel(type),text:'',eyebrow:'',alignment:'left',colorScheme:'default',fullWidth:false,layout:'cards'};
+  const common={id:`section-${crypto.randomUUID().toLowerCase()}`,type,visible:true,heading:themeSectionLabel(type),text:'',eyebrow:'',alignment:'left',colorScheme:'default',fullWidth:false,layout:'cards',headingFont:'theme',headingSize:'theme',headingColor:'',headingBold:false,headingItalic:false,headingUnderline:false,textFont:'theme',textSize:'theme',textColor:'',textBold:false,textItalic:false,textUnderline:false};
   let section;
   if(type==='rich-text')section={...common,buttonText:'',buttonUrl:''};
   else if(type==='image-with-text')section={...common,image:null,imagePosition:'left',buttonText:'',buttonUrl:''};
@@ -52,6 +54,17 @@ export function newThemeSection(type,preset={}) {
 
 function imageControls(image,esc) {
   return `<div class="store-banner-media" data-theme-image-holder data-theme-image='${esc(JSON.stringify(image||null))}'><div class="store-banner-image theme-section-image">${image?.dataUrl?`<img src="${esc(image.dataUrl)}" alt="Selected image" data-section-image-preview>`:'<span data-section-image-placeholder>Add an image</span>'}</div><label class="field store-media-upload">Choose image<input data-section-image type="file" accept="image/png,image/jpeg,image/webp"></label><button type="button" class="secondary" data-section-image-remove ${image?'':'hidden'}>Remove image</button></div>`;
+}
+
+function typographyGroup(section,prefix,label,esc,icon) {
+  const enabled=name=>section[`${prefix}${name}`]?'true':'false';
+  const toggle=(name,title,iconName)=>`<button type="button" class="theme-style-button" data-section-style-toggle="${prefix}${name}" aria-label="${title} ${label.toLowerCase()}" title="${title}" aria-pressed="${enabled(name)}">${icon(iconName)}</button><input type="checkbox" data-section-field="${prefix}${name}" ${section[`${prefix}${name}`]?'checked':''} hidden>`;
+  const color=section[`${prefix}Color`]||'';
+  return `<div class="theme-typography-group" data-section-typography-group><strong>${label}</strong><div class="theme-typography-selects"><label class="field">Font<select data-section-field="${prefix}Font">${fontChoices.map(([value,name])=>option(value,name,section[`${prefix}Font`]||'theme')).join('')}</select></label><label class="field">Size<select data-section-field="${prefix}Size">${sizeChoices.map(([value,name])=>option(value,name,section[`${prefix}Size`]||'theme')).join('')}</select></label></div><div class="theme-typography-tools" role="group" aria-label="${label} formatting">${toggle('Bold','Bold','bold')}${toggle('Italic','Italic','italic')}${toggle('Underline','Underline','underline')}<div class="theme-color-control ${color?'is-custom':''}" data-section-color-control><label title="${label} color"><span>Color</span><input type="color" data-section-color-picker aria-label="${label} color" value="${esc(color||'#17211d')}"></label><input type="hidden" data-section-field="${prefix}Color" value="${esc(color)}"><button type="button" class="theme-color-reset" data-section-color-reset aria-label="Use theme color for ${label.toLowerCase()}" title="Use theme color" ${color?'':'disabled'}>${icon('rotate-ccw')}</button></div></div></div>`;
+}
+
+function typographyControls(section,esc,icon) {
+  return `<div class="theme-typography"><div class="theme-typography-title"><strong>Text style</strong><small>Choose how this section's text looks.</small></div>${typographyGroup(section,'heading','Heading',esc,icon)}${typographyGroup(section,'text','Body text',esc,icon)}</div>`;
 }
 
 export function themeSectionBlock(type,block,esc,icon) {
@@ -75,14 +88,14 @@ export function themeSectionPanel(section,esc,icon) {
   const button=['rich-text','image-with-text'].includes(section.type)?`${field('buttonText','Button text',esc(section.buttonText))}<label class="field">Button destination<select data-section-destination></select></label><div data-section-custom-link>${field('buttonUrl','Web address',esc(section.buttonUrl))}</div>`:'';
   const columns=section.type==='comparison'?`${field('columnHeading','Your column heading',esc(section.columnHeading||''))}${field('otherHeading','Other column heading',esc(section.otherHeading||''))}`:'';
   const blockList=blockTypes.includes(section.type)?`<div class="theme-block-list" data-theme-block-list>${(section.blocks||[]).map(block=>themeSectionBlock(section.type,block,esc,icon)).join('')}</div><button type="button" class="secondary store-add-link" data-theme-block-add>${icon('plus')}<span>Add block</span></button>`:'';
-  return `<fieldset class="store-editor-fieldset theme-custom-editor" data-store-section-panel="${esc(section.id)}" data-theme-section-id="${esc(section.id)}" data-theme-section-type="${esc(section.type)}" hidden>${common}${layout}${media}${button}${columns}${blockList}<div class="theme-section-actions"><button type="button" class="secondary" data-theme-section-duplicate>${icon('copy')}<span>Duplicate</span></button><button type="button" class="secondary danger-text" data-theme-section-remove>${icon('trash-2')}<span>Remove section</span></button></div></fieldset>`;
+  return `<fieldset class="store-editor-fieldset theme-custom-editor" data-store-section-panel="${esc(section.id)}" data-theme-section-id="${esc(section.id)}" data-theme-section-type="${esc(section.type)}" hidden>${common}${typographyControls(section,esc,icon)}${layout}${media}${button}${columns}${blockList}<div class="theme-section-actions"><button type="button" class="secondary" data-theme-section-duplicate>${icon('copy')}<span>Duplicate</span></button><button type="button" class="secondary danger-text" data-theme-section-remove>${icon('trash-2')}<span>Remove section</span></button></div></fieldset>`;
 }
 
 const readImage=holder=>{try{return JSON.parse(holder?.dataset.themeImage||'null');}catch{return null;}};
 export function readThemeSectionState(form) {
   return [...form.querySelectorAll('[data-theme-section-id]')].map(panel=>{
     const control=name=>panel.querySelector(`[data-section-field="${name}"]`),read=name=>control(name)?.value||'',type=panel.dataset.themeSectionType;
-    const section={id:panel.dataset.themeSectionId,type,visible:control('visible').checked,heading:read('heading'),text:read('text'),eyebrow:read('eyebrow'),alignment:read('alignment'),colorScheme:read('colorScheme'),fullWidth:control('fullWidth').checked,layout:read('layout')||'cards'};
+    const section={id:panel.dataset.themeSectionId,type,visible:control('visible').checked,heading:read('heading'),text:read('text'),eyebrow:read('eyebrow'),alignment:read('alignment'),colorScheme:read('colorScheme'),fullWidth:control('fullWidth').checked,layout:read('layout')||'cards',headingFont:read('headingFont')||'theme',headingSize:read('headingSize')||'theme',headingColor:read('headingColor'),headingBold:control('headingBold').checked,headingItalic:control('headingItalic').checked,headingUnderline:control('headingUnderline').checked,textFont:read('textFont')||'theme',textSize:read('textSize')||'theme',textColor:read('textColor'),textBold:control('textBold').checked,textItalic:control('textItalic').checked,textUnderline:control('textUnderline').checked};
     if(type==='image-with-text')Object.assign(section,{image:readImage(panel.querySelector('[data-theme-image-holder]')),imagePosition:read('imagePosition')});
     if(['rich-text','image-with-text'].includes(type))Object.assign(section,{buttonText:read('buttonText'),buttonUrl:read('buttonUrl')});
     if(type==='comparison')Object.assign(section,{columnHeading:read('columnHeading'),otherHeading:read('otherHeading')});

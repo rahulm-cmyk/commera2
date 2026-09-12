@@ -34,8 +34,20 @@ test('new section inputs validate limits, IDs and links',()=>{
   assert.throws(()=>normalizeThemeSections([{...comparison,blocks:[{heading:'x'.repeat(81)}]}]),/80 characters/);
   assert.throws(()=>normalizeThemeSections(Array.from({length:21},(_,i)=>({...comparison,id:`section-example-${i}`}))),/20 custom/);
   assert.throws(()=>normalizeThemeSettings({heroSecondaryUrl:'javascript:alert(1)'}),/Section links/);
+  assert.throws(()=>normalizeThemeSections([{...gallery,headingColor:'red'}]),/six-digit color/);
   assert.equal(normalizeThemeSettings({design:'unknown'}).design,'classic');
   assert.equal(normalizeThemeSettings({design:'botanical',heroAccent:'Fresh every day'}).heroAccent,'Fresh every day');
+});
+test('section typography is validated and rendered without accepting arbitrary CSS',()=>{
+  const [styled]=normalizeThemeSections([{...comparison,headingFont:'serif',headingSize:'large',headingColor:'#A12B3C',headingItalic:true,headingUnderline:true,textFont:'mono',textSize:'small',textColor:'#123456',textBold:true}]);
+  assert.equal(styled.headingColor,'#a12b3c');
+  const html=renderCustomSection(styled,escape);
+  assert.match(html,/has-heading-font/);
+  assert.match(html,/section-heading-italic/);
+  assert.match(html,/section-heading-underline/);
+  assert.match(html,/section-text-bold/);
+  assert.match(html,/--section-heading-font:Georgia/);
+  assert.match(html,/--section-text-color:#123456/);
 });
 test('gallery images and editorial settings survive save, partial update and publication without changing the live draft boundary',async t=>{
   const app=createApp({db:createDatabase(':memory:'),port:0,merchantAuth:false,domainSyncIntervalMs:0,otpProviders:{},googleAuthProvider:null,accountEmailProvider:null});

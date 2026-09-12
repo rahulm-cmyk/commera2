@@ -485,6 +485,22 @@ body.online-theme-editor-open .online-theme-editor .store-editor-panel .field te
 body.online-theme-editor-open .online-theme-editor .store-code-panel textarea { min-height:380px; font-family:ui-monospace,SFMono-Regular,Consolas,monospace; line-height:1.55; tab-size:2; }
 body.online-theme-editor-open .store-code-note { margin:0; padding:10px; border-left:3px solid #16878b; background:#f1f7f7; color:#536267; font-size:12px; line-height:1.5; }
 body.online-theme-editor-open .online-theme-editor .form-columns { grid-template-columns:minmax(0,1fr); gap:15px; }
+body.online-theme-editor-open .theme-typography { display:grid; gap:16px; margin-inline:-18px; padding:16px 18px; border-block:1px solid #e1e6e7; background:#fafbfb; }
+body.online-theme-editor-open .theme-typography-title { display:grid; gap:2px; }
+body.online-theme-editor-open .theme-typography-title strong { font-size:13px; }
+body.online-theme-editor-open .theme-typography-title small { color:#6a777c; font-size:11px; line-height:1.4; }
+body.online-theme-editor-open .theme-typography-group { display:grid; gap:9px; }
+body.online-theme-editor-open .theme-typography-group>strong { color:#35454b; font-size:11px; }
+body.online-theme-editor-open .theme-typography-selects { display:grid; grid-template-columns:1fr; gap:8px; }
+body.online-theme-editor-open .theme-typography-tools { display:flex; align-items:center; gap:5px; min-width:0; }
+body.online-theme-editor-open .theme-style-button,body.online-theme-editor-open .theme-color-reset { display:grid; place-items:center; width:34px; min-width:34px; height:34px; min-height:34px; padding:7px; border:1px solid #ccd6d9; border-radius:4px; background:#fff; color:#27353a; }
+body.online-theme-editor-open .theme-style-button img,body.online-theme-editor-open .theme-color-reset img { width:16px; height:16px; }
+body.online-theme-editor-open .theme-style-button[aria-pressed="true"] { border-color:#6b84da; background:#eaf0ff; color:#264bc0; box-shadow:inset 0 0 0 1px #6b84da; }
+body.online-theme-editor-open .theme-color-control { display:flex; align-items:end; gap:5px; margin-left:auto; }
+body.online-theme-editor-open .theme-color-control>label { display:grid; gap:3px; color:#68757a; font-size:10px; }
+body.online-theme-editor-open .theme-color-control input[type="color"] { width:42px; min-width:42px; height:34px; min-height:34px; margin:0; padding:3px; border:1px solid #ccd6d9; border-radius:4px; background:#fff; cursor:pointer; }
+body.online-theme-editor-open .theme-color-control:not(.is-custom) input[type="color"] { opacity:.55; }
+body.online-theme-editor-open .theme-color-reset:disabled { opacity:.35; cursor:default; }
 body.online-theme-editor-open .online-theme-editor input[type="range"] {
   min-height:24px !important;
   padding:0 !important;

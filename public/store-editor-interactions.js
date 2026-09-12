@@ -62,10 +62,10 @@ export function editorBlocks(id, form) {
   if (coreBlocks[id]) return coreBlocks[id];
   const panel = form.querySelector(`[data-theme-section-id="${id}"]`);
   if (!panel) return [];
-  const blocks = [{key:'heading',label:'Heading',fields:field('heading','eyebrow'),preview:'h2',icon:'type'}];
+  const blocks = [{key:'heading',label:'Heading',fields:field('heading','eyebrow','headingFont','headingSize','headingColor','headingBold','headingItalic','headingUnderline'),preview:'h2',icon:'type'}];
   const type = panel.dataset.themeSectionType;
   if (['rich-text','image-with-text'].includes(type)) {
-    blocks.push({key:'text',label:'Text',fields:field('text'),preview:'.theme-section-inner > p,.theme-section-copy > p',icon:'align-left'});
+    blocks.push({key:'text',label:'Text',fields:field('text','textFont','textSize','textColor','textBold','textItalic','textUnderline'),preview:'.theme-section-inner > p,.theme-section-copy > p',icon:'align-left'});
     blocks.push({key:'button',label:'Button',fields:`${field('buttonText','buttonUrl')},[data-section-destination]`,preview:'.theme-section-button',icon:'mouse-pointer-2'});
   }
   if (type === 'image-with-text') blocks.unshift({key:'image',label:'Image',fields:'[data-section-image]',preview:'.theme-section-inner > img',icon:'image'});
@@ -85,6 +85,10 @@ export function showEditorBlock(panel, block) {
     const match = block.row ? child.contains(block.row) : child.matches(block.fields) || [...child.querySelectorAll(block.fields)].some(control=>!control.closest('[data-theme-block]'));
     child.classList.toggle('editor-context-hidden', !match);
   }
+  panel.querySelectorAll('[data-section-typography-group]').forEach(group=>{
+    const matches=!block.row&&[...group.querySelectorAll('[data-section-field]')].some(control=>control.matches(block.fields));
+    group.classList.toggle('editor-context-hidden',!matches);
+  });
   panel.querySelectorAll('.botanical-banner-controls > .field').forEach(child=>child.classList.toggle('editor-context-hidden',!child.querySelector(block.fields)));
   if (block.row) panel.querySelectorAll('[data-theme-block]').forEach(row => row.classList.toggle('editor-context-hidden',row!==block.row));
 }
