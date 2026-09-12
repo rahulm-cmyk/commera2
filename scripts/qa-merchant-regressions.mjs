@@ -83,7 +83,14 @@ try {
     await page.screenshot({ path: `qa-ui-regression-order-detail-${width}.png`, fullPage: true });
 
     await page.goto(base + '/online-store/themes/current/edit');
-    await page.locator('[data-store-section="connections"]').click();
+    await page.locator('.store-editor-toolbar').waitFor();
+    if (width === 1440) {
+      await page.getByRole('button', { name: 'Banner', exact: true }).click();
+      await page.locator('[name="bannerHeading"]').fill('Unsaved connection test');
+    }
+    if (await page.getByRole('button', { name: 'Open store tools panel', exact: true }).isVisible()) await page.getByRole('button', { name: 'Open store tools panel', exact: true }).click();
+    else await page.getByRole('tab', { name: 'Sections', exact: true }).click();
+    await page.locator('[data-store-section="connections"]:visible').click();
     const row = page.locator('.store-connection-row').first();
     await row.waitFor();
     await checkPage(page);
@@ -103,16 +110,18 @@ try {
       const control = geometry.controls[index];
       assert.ok(control.height >= 38 && control.height <= 44, `Connection control wraps at ${width}`);
       assert.ok(control.right <= geometry.right + 1, `Connection control escapes at ${width}`);
-      if (index) assert.ok(control.x >= geometry.controls[index - 1].right + 4);
+      if (index) { const previous = geometry.controls[index - 1]; assert.ok(control.x >= previous.right + 4 || control.y >= previous.y + previous.height + 4, 'Connection actions overlap'); }
     }
     // Save the existing connection on fixture data; do not publish or change live data.
     if (width === 1440) {
       await row.getByRole('button', { name: 'Save page', exact: true }).click();
       await page.getByRole('status').filter({ hasText: 'Product page connection saved' }).waitFor();
-      await page.locator('[data-store-section="connections"][aria-current="true"]').waitFor();
+      await page.locator('#store-connections').waitFor({ state: 'visible' });
+      assert.equal(await page.locator('[name="bannerHeading"]').inputValue(), 'Unsaved connection test', 'Saving a product connection discarded unsaved home changes');
     }
     await page.screenshot({ path: `qa-ui-regression-connections-${width}.png`, fullPage: true });
     await page.locator('[data-store-product-data]').first().click();
+    if (width === 1440) await page.locator('#discard-changes').click();
     await page.locator('#product-editor').waitFor();
 
     if (width < 1024) await page.getByRole('button', { name: 'Open navigation', exact: true }).click();
@@ -176,17 +185,18 @@ try {
     await page.locator('#workspace-store-name').filter({ hasText: second.name }).waitFor();
 
     await page.goto(`http://127.0.0.1:${app.port}/online-store/themes/current/edit`);
+    await page.getByRole('button', { name: 'Banner', exact: true }).click();
     await page.locator('[name="bannerHeading"]').fill('Unsaved draft');
-    await trigger.click();
-    await page.locator('#store-switcher-options button').first().click();
+    await page.getByRole('button', { name: 'Exit editor', exact: true }).click();
     await page.locator('#continue-editing').click();
-    await page.waitForFunction(() => !document.querySelector('#store-switcher-trigger').disabled);
     assert.equal(await page.locator('#store-select').inputValue(), String(second.id));
     assert.equal(await trigger.locator('strong').textContent(), second.name);
     assert.equal(await page.locator('[name="bannerHeading"]').inputValue(), 'Unsaved draft');
+    await page.getByRole('button', { name: 'Exit editor', exact: true }).click();
+    await page.locator('#discard-changes').click();
+    await page.waitForURL('**/online-store/themes');
     await trigger.click();
     await page.locator('#store-switcher-options button').first().click();
-    await page.locator('#discard-changes').click();
     await page.locator('#workspace-store-name').filter({ hasText: first.name }).waitFor();
     await page.waitForURL('**/online-store/themes');
     assert.equal(await page.locator('#store-select').inputValue(), String(first.id));

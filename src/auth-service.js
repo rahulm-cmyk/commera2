@@ -26,6 +26,7 @@ function passwordHash(password) {
 }
 
 function passwordMatches(password, stored) {
+  if (typeof password !== 'string' || password.length > 256) return false;
   const [algorithm, salt, expected] = clean(stored).split("$");
   if (algorithm !== "scrypt" || !salt || !expected) return false;
   const actual = scryptSync(password, salt, 64).toString("hex");

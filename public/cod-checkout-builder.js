@@ -2,6 +2,7 @@
   const node = document.querySelector('#cod-builder-settings'), form = document.querySelector('#cod-form');
   if (!node || !form) return;
   const config = JSON.parse(node.textContent), panel = form.querySelector('.checkout-form-panel');
+  import('./checkout-motion.js').then(({ animateCheckout }) => animateCheckout(form, config.animation)).catch(() => {});
   if (config.style) {
     const css = document.createElement('style'), s = config.style;
     css.textContent = `.checkout-page .checkout-form-panel{--page-text:${s.text};background:${s.background};color:${s.text};border-radius:${s.radius}px}.place-order-button{background:${s.button}!important;color:${s.buttonText}!important;border-radius:${s.radius}px!important}`;
@@ -16,7 +17,7 @@
     if(out.shippingUnavailable){const notice=document.createElement('p');notice.textContent='No delivery method available. Check your delivery address.';notice.setAttribute('role','status');shipping.append(notice);}
     for(const rate of out.shippingMethods||[]) {
       const label=document.createElement('label');label.className='bundle-choice';
-      const radio=document.createElement('input');radio.type='radio';radio.name='shippingMethodId';radio.value=rate.id;radio.checked=rate.id===out.shippingMethodId;
+      const radio=document.createElement('input');radio.type='radio';radio.name='shippingMethodId';radio.value=rate.id;radio.checked=rate.id===out.shippingMethodId;radio.inert=form.getAttribute('aria-busy')==='true';
       const description=document.createElement('span'),title=document.createElement('strong'),detail=document.createElement('small');
       title.textContent=`${rate.name} - ${rate.shippingPaise?new Intl.NumberFormat(undefined,{style:'currency',currency:config.currency}).format(rate.shippingPaise/100):'Free'}`;detail.textContent=rate.description;
       description.append(title,detail);label.append(radio,description);shipping.append(label);
@@ -25,7 +26,7 @@
   showShipping(config);
   document.addEventListener('DOMContentLoaded',()=>{
     const original=setSummary;setSummary=out=>{original(out);showShipping(out);};
-    shipping.addEventListener('change',()=>save('draft').catch(error=>{document.querySelector('#status').textContent=error.message;}));
+    shipping.addEventListener('change',()=>save('draft').catch(reportCheckoutError));
   });
   if (config.fieldOrder) {
     const target = form.querySelector('.checkout-fields--contact');
@@ -67,7 +68,7 @@
       };
       setSummary = out => { originalSummary(out); showExtras(out); };
       showExtras({addons:config.addons.filter(a=>config.selectedAddons.includes(a.productId))});
-      offers.addEventListener('change',()=>save('draft').catch(error=>{document.querySelector('#status').textContent=error.message;}));
+      offers.addEventListener('change',()=>save('draft').catch(reportCheckoutError));
     });
   }
   if (!config.customFields.length) return;

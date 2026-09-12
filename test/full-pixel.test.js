@@ -387,7 +387,9 @@ test("order_created is emitted by the backend only after one valid COD order exi
     visitorSessionId: "order-visitor-session",
     consentGranted: true,
   });
-  assert.equal(result.response.status, 400);
+  assert.equal(result.response.status, 200);
+  assert.equal(result.body.completed, true);
+  assert.match(result.body.thankYouUrl, /\/thank-you\//);
   assert.equal(
     (await call(base, `/api/stores/${store.id}/tracking-events?event=order_created`)).body.length,
     1,

@@ -64,9 +64,11 @@ test('dedicated COD checkout fetches pincode and locks authoritative city/state/
   const opened=await call(base,'/api/public/nivkara/ritual/checkouts','POST',{intent:'open',quantity:1});
   assert.equal(opened.response.status,201);
   page=await call(base,`/s/nivkara/checkout/${opened.body.id}`);
-  for(const text of ['name="pincode"','name="city"','name="state"','name="country"','Please enter a valid pincode','Delivery is not available at this pincode','/pincodes/','lookupPincode'])assert.match(page.body,new RegExp(text.replace(/[.*+?^${}()|[\]\\]/g,'\\$&')));
+  for(const text of ['name="pincode"','name="city"','name="state"','name="country"','src="/checkout.js"']) assert.ok(page.body.includes(text));
   for(const field of ['city','state','country'])assert.match(page.body,new RegExp(`name="${field}"[^>]*readonly`));
-  assert.match(page.body,/addEventListener\('input',[\s\S]*if\(city\)city\.value=''[\s\S]*if\(state\)state\.value=''/);
-  assert.match(page.body,/addEventListener\('input',[\s\S]*submitButton\.disabled=true/);
-  assert.match(page.body,/submitButton\.disabled=!pincodeReady\|\|false/);
+  const script=await(await fetch(base+'/checkout.js')).text();
+  assert.match(script,/if \(city\) city.value = ''/);
+  assert.match(script,/if \(state\) state.value = ''/);
+  assert.match(script,/version !== lookupVersion/);
+  assert.match(script,/lookupController\?\.abort/);
 });

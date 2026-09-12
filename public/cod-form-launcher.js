@@ -22,7 +22,7 @@
     const selected=document.querySelector('[name="heroBundleId"]:checked'), quantity=document.querySelector('#hero-quantity');
     const payload={intent:'open',quantity:Number(selected?.dataset.quantity||quantity?.value||1),bundleId:selected?.value?Number(selected.value):null,
       visitorSessionId:window.commera2VisitorSessionId||null,checkoutToken:typeof VISITOR_TOKEN==='undefined'?null:VISITOR_TOKEN,
-      deviceId:localStorage.getItem('commera2-device-id')||'',analyticsConsentGranted:window.commera2AnalyticsConsent?.()??false,consentGranted:window.commera2TrackingConsent?.()??false,
+      deviceId:storageGet('local','commera2-device-id')||'',analyticsConsentGranted:window.commera2AnalyticsConsent?.()??false,consentGranted:window.commera2TrackingConsent?.()??false,
       behavior:{timeOnPageMs:Math.round(performance.now()),source:'product_page'}};
     const key=JSON.stringify([payload.quantity,payload.bundleId]);
     if(loading||loaded&&selection===key){if(!popup&&scroll)host.scrollIntoView({behavior:'smooth'});return;}

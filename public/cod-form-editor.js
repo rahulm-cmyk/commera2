@@ -1,3 +1,5 @@
+import { animateCheckout } from './checkout-motion.js';
+
 export function mountCodFormEditor({ form, config, esc, products = [] }) {
   const pane = form.querySelector('[data-cod-pane="fields"]');
   const original = [...pane.querySelectorAll('.cod-field-card')];
@@ -7,6 +9,17 @@ export function mountCodFormEditor({ form, config, esc, products = [] }) {
   const style = { background:'#ffffff',text:'#17252a',button:'#00838b',buttonText:'#ffffff',radius:6,...config.style };
   const icon = name => `<img src="/icons/${name}.svg" width="16" height="16" alt="">`;
   pane.innerHTML = `<div class="cod-editor-layout"><div class="cod-editor-controls"><div class="cod-editor-title"><h2>Customer fields</h2><button type="button" id="cod-add-custom" class="secondary">${icon('plus')} Add field</button></div><div id="cod-edit-fields"></div><div id="cod-custom-fields"></div><h3>Form appearance</h3><div class="cod-colors">${[['background','Background'],['text','Text'],['button','Button'],['buttonText','Button text']].map(([key,label])=>`<label>${label}<input type="color" name="cod-style-${key}" value="${style[key]}"></label>`).join('')}</div><label class="field">Corner radius<input type="range" name="cod-style-radius" min="0" max="24" value="${style.radius}"></label></div><aside class="cod-editor-preview"><div class="cod-editor-title"><h3>Form preview</h3><span>Unsaved changes</span></div><div id="cod-live-preview"></div></aside></div>`;
+  const motion = document.createElement('div');
+  motion.className = 'cod-motion-controls';
+  motion.innerHTML = `<label class="field">Checkout animation<select name="cod-animation" aria-label="Checkout animation">${[['none','Off'],['fade','Fade'],['slide','Slide']].map(([value,label])=>`<option value="${value}" ${value === (config.animation || 'none') ? 'selected' : ''}>${label}</option>`).join('')}</select></label><button type="button" class="secondary" title="Preview checkout animation" aria-label="Preview checkout animation">${icon('play')} Preview</button>`;
+  pane.querySelector('.cod-editor-controls').append(motion);
+  motion.querySelector('button').onclick = () => {
+    const node = pane.querySelector('#cod-live-preview');
+    node.scrollTop = 0;
+    node.scrollIntoView({ block: 'nearest' });
+    animateCheckout(node, form.elements['cod-animation'].value);
+  };
+  motion.querySelector('select').addEventListener('change', () => animateCheckout(pane.querySelector('#cod-live-preview'), form.elements['cod-animation'].value));
   const host = pane.querySelector('#cod-edit-fields');
   order.forEach(key => {
     const article = original.find(node => node.querySelector(`[name="field-${key}-label"]`));
@@ -56,7 +69,7 @@ export function mountCodFormEditor({ form, config, esc, products = [] }) {
   }
   addonPane.querySelector('#cod-add-addon').onclick=()=>{addons.push({productId:0,title:'',pricePaise:0});drawAddons();};
   drawAddons();
-  const read = () => ({addons:structuredClone(addons),fieldOrder:[...host.querySelectorAll('[data-field-key]')].map(row=>row.dataset.fieldKey),customFields:structuredClone(custom),style:Object.fromEntries([...pane.querySelectorAll('[name^="cod-style-"]')].map(input=>[input.name.slice(10),input.type==='range'?Number(input.value):input.value]))});
+  const read = () => ({animation:form.elements['cod-animation'].value,addons:structuredClone(addons),fieldOrder:[...host.querySelectorAll('[data-field-key]')].map(row=>row.dataset.fieldKey),customFields:structuredClone(custom),style:Object.fromEntries([...pane.querySelectorAll('[name^="cod-style-"]')].map(input=>[input.name.slice(10),input.type==='range'?Number(input.value):input.value]))});
   function preview() {
     const draft=read(), node=pane.querySelector('#cod-live-preview');
     node.style.background=draft.style.background;node.style.color=draft.style.text;node.style.borderRadius=`${draft.style.radius}px`;

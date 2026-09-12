@@ -1801,6 +1801,8 @@ body:has(> #app-sidebar) .online-theme-editor #store-connections {
 
 body:has(> #app-sidebar) .store-connection-row {
   display: grid;
+  min-width: 0;
+  container-type: inline-size;
   gap: 18px;
   padding: 24px 0;
 }
@@ -1850,13 +1852,17 @@ body:has(> #app-sidebar) .store-connection-row .field {
 body:has(> #app-sidebar) .store-connection-actions {
   display: flex;
   align-items: center;
-  flex-wrap: nowrap;
+  flex-wrap: wrap;
   gap: 6px;
 }
 
 body:has(> #app-sidebar) .store-connection-actions > .primary {
   margin-right: auto;
   white-space: nowrap;
+}
+
+@container (max-width: 250px) {
+  body:has(> #app-sidebar) .store-connection-actions > .primary { flex: 1 0 100%; }
 }
 
 body:has(> #app-sidebar) .store-connection-actions > .icon-button {
@@ -2609,6 +2615,9 @@ body:has(> #app-sidebar):is(.auth-screen, .visual-builder-open) > main > :is(.mo
 .cod-field-row .cod-field-card { border:0!important; box-shadow:none!important; padding:14px; }
 .cod-editor-controls h3 { margin:24px 0 16px; font-size:15px; }
 .cod-colors { display:grid; grid-template-columns:repeat(4,minmax(0,1fr)); gap:12px; }
+.cod-motion-controls { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:12px; align-items:end; margin-top:20px; }
+.cod-motion-controls .field { margin:0; }
+.cod-motion-controls button { display:flex; align-items:center; gap:6px; min-height:40px; }
 .cod-colors label { display:grid; gap:7px; font-size:12px; }
 .cod-colors input { height:34px; width:100%; padding:3px; }
 .cod-editor-preview { position:sticky; top:24px; min-width:0; }

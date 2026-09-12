@@ -165,6 +165,10 @@ try {
   assert.match(richTypography.body,/href="\/pages\/details"/i);
   await headingEditor.scrollIntoViewIfNeeded();
   await page.screenshot({path:`${output}/section-rich-text.png`});
+  await panel().getByRole('button',{name:'Duplicate',exact:true}).click();
+  const richCopy=await panel().getAttribute('data-theme-section-id');
+  assert.equal(await frame().locator(`[data-store-editor-section="${richCopy}"] h2`).innerHTML(),richTypography.heading,'Duplicating a section must preserve heading text and formatting');
+  assert.equal(await frame().locator(`[data-store-editor-section="${richCopy}"] .theme-rich-content`).innerHTML(),richTypography.body);
   await page.getByRole('button',{name:'Add section',exact:true}).click();
   await page.getByRole('button',{name:'Image with text',exact:true}).click();
   await panel().locator('[data-section-image]').setInputFiles({name:png.name,mimeType:png.type,buffer:Buffer.from(png.data,'base64')});
@@ -193,6 +197,7 @@ try {
     assert.equal(await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>section.style.getPropertyValue('--section-heading-color')),'#a12b3c');
     assert.equal(await frame().locator(`[data-store-editor-section="${addedId}"]`).evaluate(section=>section.style.getPropertyValue('--section-heading-size')),'62px');
     assert.match(await frame().locator(`[data-store-editor-section="${addedId}"] h2`).innerHTML(),/<b>precise<\/b>/i);
+    assert.equal(await frame().locator(`[data-store-editor-section="${richCopy}"] h2`).innerHTML(),richTypography.heading,'Duplicated formatting must survive save and reload');
     assert.match(await frame().locator(`[data-store-editor-section="${addedId}"] .theme-rich-content`).innerHTML(),/href="\/pages\/details"/i);
     assert.equal(await frame().locator(`[data-store-editor-section="${imageCopy}"] img`).evaluate(img=>img.complete&&img.naturalWidth>0),true,'Duplicated image must survive save and reload');
   }

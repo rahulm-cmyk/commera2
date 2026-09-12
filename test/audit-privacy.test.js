@@ -14,13 +14,19 @@ test('browser consent is store scoped and rejection blocks tracking even when op
     const page=app.service.createProductPage(store.id,{productId:product.id,title:'Page',slug:'page',body:'Test'});app.service.publishPage(store.id,page.id);
     settings.update(store.id,'privacy',{cookieBannerEnabled:true,requireMarketingConsent:true});
     const html=await fetch(`http://127.0.0.1:${app.port}/s/${suffix}/page`).then(r=>r.text());
-    assert.match(html,new RegExp(`setItem\\('commera2_tracking_consent_${store.id}'`));
+    assert.match(html,new RegExp(`storageSet\\('local','commera2_tracking_consent_${store.id}'`));
     const functions=['analyticsConsent','pixelConsent'].map(name=>html.match(new RegExp(`function ${name}\\(\\)\\{[^}]+\\}`))?.[0]).join('\n');
     const context={PIXEL_STORE:store.id,PIXEL_REQUIRE_CONSENT:true,localStorage:{getItem:key=>saved.get(key)}};
-    vm.createContext(context);vm.runInContext(functions,context);
+    const storage = html.match(/const storageMemory=[\s\S]+?(?=const PIXEL_STORE)/)[0];
+    vm.createContext(context);vm.runInContext(storage + functions,context);
     assert.equal(context.pixelConsent(),store.id===1);
     saved.set('commera2_tracking_consent_'+store.id,'rejected');context.PIXEL_REQUIRE_CONSENT=false;
     assert.equal(context.pixelConsent(),false);
+    context.localStorage.getItem=()=>{throw Error('Storage blocked');};
+    assert.equal(context.analyticsConsent(),false);
+    assert.equal(context.pixelConsent(),false);
+    vm.runInContext("storageSet('local','commera2_tracking_consent_'+PIXEL_STORE,'accepted')",context);
+    assert.equal(context.pixelConsent(),true);
   }
 });
 

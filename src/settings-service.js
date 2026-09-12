@@ -1,4 +1,5 @@
 import { validateCodBuilder } from './cod-builder.js';
+import { mergeSettings as merge, validateJsonObject } from './request-input.js';
 const clean=value=>String(value??'').trim();
 const bool=(value,fallback)=>{
   if (value === undefined) return fallback;
@@ -10,7 +11,6 @@ const bool=(value,fallback)=>{
   return Boolean(value);
 };
 const clone=value=>structuredClone(value);
-const merge=(base,patch)=>{const result=clone(base);for(const [key,value] of Object.entries(patch||{})){if(value&&typeof value==='object'&&!Array.isArray(value)&&result[key]&&typeof result[key]==='object'&&!Array.isArray(result[key]))result[key]=merge(result[key],value);else result[key]=value;}return result;};
 const field=(label,{show=true,required=false,placeholder=''}={})=>({show,required,label,placeholder});
 export const defaultSettings={
  codForm:{enabled:true,formName:'Default COD Form',heading:'Complete Your Delivery Details',subheading:'',submitButtonText:'Place COD Order',addressAutofill:true,saveIncompleteCheckout:true,buttonEnabled:true,fields:{fullName:field('Full Name',{required:true}),phone:field('Phone Number',{required:true}),alternatePhone:field('Alternate Phone',{show:true}),email:field('Email',{show:true}),address1:field('Address Line 1',{required:true,placeholder:'House or building, street'}),address2:field('Address Line 2',{show:true,placeholder:'Area, locality, floor or apartment (optional)'}),landmark:field('Landmark',{show:false}),pincode:field('Pincode',{required:true}),city:field('City',{required:true}),state:field('State',{required:true}),country:field('Country',{required:true})},otp:{enabled:false,requiredForCod:true,length:6,expiryMinutes:5,resendDelaySeconds:30,maxAttempts:5,maxResends:3,verificationPosition:'before_order',provider:'custom',allowPhoneChange:true},summary:{productImage:true,productName:true,quantity:true,selectedBundle:true,productPrice:true,discount:true,shippingCharge:true,finalTotal:true,couponField:true},protection:{duplicateOrders:true,blackOrders:true,multipleFakeOrders:true,botTraffic:true,botProtection:{enabled:true,rateLimiting:true,deviceSessionCheck:true,behaviorDetection:true,invisibleChallenge:false,captchaSuspiciousTraffic:false,ipReputationCheck:false,blockKnownBadIps:false,checkoutToken:false,honeypot:true,otpSuspiciousTraffic:true,highRiskAction:'require_otp',criticalRiskAction:'block',ipCheckoutLimit:10,ipWindowMinutes:10,deviceAttemptLimit:5,deviceWindowMinutes:30}}},
@@ -28,8 +28,9 @@ export class SettingsService{
  #ensure(storeId){this.#store(storeId);this.db.prepare('INSERT INTO store_settings(store_id) VALUES(?) ON CONFLICT(store_id) DO NOTHING').run(storeId);return this.db.prepare('SELECT * FROM store_settings WHERE store_id=?').get(storeId);}
  get(storeId){const row=this.#ensure(storeId);return{codForm:parse(row.cod_form_json,defaultSettings.codForm),checkout:parse(row.checkout_json,defaultSettings.checkout),shipping:parse(row.shipping_json,defaultSettings.shipping),privacy:parse(row.privacy_json,defaultSettings.privacy)};}
  update(storeId,module,patch){
-  const column=columns[module];if(!column)throw Error('Unsupported settings module');
-  const current=this.get(storeId)[module];let next=merge(current,patch||{});
+  if(!Object.hasOwn(columns,module))throw Error('Unsupported settings module');
+  const column=columns[module];validateJsonObject(patch);
+  const current=this.get(storeId)[module];let next=merge(current,patch);
   if(module==='codForm'){
    next=validateCodBuilder(this.#cod(next));
    for(const addon of next.addons) {

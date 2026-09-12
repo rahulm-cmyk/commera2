@@ -3048,3 +3048,16 @@ body.exit-offer-open {
 @media (prefers-reduced-motion: reduce) {
   html { scroll-behavior: auto; }
 }
+
+.checkout-page .place-order-button { min-height:48px; display:flex; align-items:center; justify-content:center; gap:10px; }
+.checkout-page .place-order-button[aria-busy="true"] { cursor:wait; }
+.checkout-page .place-order-button[aria-busy="true"]::before { content:''; width:16px; height:16px; flex:0 0 16px; border:2px solid currentColor; border-right-color:transparent; border-radius:50%; animation:checkout-loading .8s linear infinite; }
+.checkout-page :is(input,select,textarea,button,summary,a):focus-visible { outline:2px solid var(--checkout-accent,#00838b); outline-offset:3px; }
+.checkout-page .checkout-field-live[data-state="error"] { color:#b42318; }
+.checkout-page .checkout-intro h1 { overflow-wrap:anywhere; letter-spacing:0; }
+.checkout-page .checkout-product > div { min-width:0; overflow-wrap:anywhere; }
+.checkout-page .checkout-product img { object-fit:contain; background:#fff; }
+@keyframes checkout-loading { to { transform:rotate(360deg); } }
+@media (prefers-reduced-motion:reduce) {
+  .checkout-page *, .checkout-page *::before, .checkout-page *::after { animation:none!important; transition:none!important; scroll-behavior:auto!important; }
+}

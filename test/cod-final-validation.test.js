@@ -50,5 +50,7 @@ test('dedicated COD checkout performs browser validation before requesting order
   assert.match(html,/name="name"[^>]*minlength="2"/);
   assert.match(html,/name="phone"[^>]*pattern="\[6-9\]/);
   assert.match(html,/name="address"[^>]*minlength="10"/);
-  assert.ok(html.indexOf('form.reportValidity()')<html.indexOf("await save('submit')"));
+  assert.match(html, /src="\/checkout.js"/);
+  const script=await(await fetch(base+'/checkout.js')).text();
+  assert.ok(script.indexOf('form.reportValidity()')<script.indexOf("await save('submit')"));
 });

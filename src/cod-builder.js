@@ -10,12 +10,14 @@ export function migrateCodBuilder(db) {
 export function validateCodBuilder(value) {
   value.displayMode ||= 'page';
   if (!['page','popup','embedded'].includes(value.displayMode)) throw Error('Choose a valid form display mode.');
+  value.animation ??= 'none';
+  if (!['none', 'fade', 'slide'].includes(value.animation)) throw Error('Choose Off, Fade, or Slide for checkout animation.');
   value.postPurchaseLimit = Number(value.postPurchaseLimit ?? 1);
   if (!Number.isInteger(value.postPurchaseLimit) || value.postPurchaseLimit<1 || value.postPurchaseLimit>5) throw Error('Choose between one and five post-purchase offers.');
   value.addons ||= [];
-  if (!Array.isArray(value.addons) || value.addons.length > 10 || new Set(value.addons.map(a=>a.productId)).size !== value.addons.length) throw Error('Use up to 10 different add-on products.');
+  if (!Array.isArray(value.addons) || value.addons.length > 10 || new Set(value.addons.map(a=>a?.productId)).size !== value.addons.length) throw Error('Use up to 10 different add-on products.');
   value.addons=value.addons.map(a=>{
-    if(!Number.isInteger(a.productId)||a.productId<1||!Number.isInteger(a.pricePaise)||a.pricePaise<0)throw Error('Add-on product and price are required.');
+    if(!a||!Number.isInteger(a.productId)||a.productId<1||!Number.isInteger(a.pricePaise)||a.pricePaise<0)throw Error('Add-on product and price are required.');
     const title=String(a.title||'').trim();if(!title||title.length>100)throw Error('Enter an add-on label of up to 100 characters.');
     return {productId:a.productId,pricePaise:a.pricePaise,title};
   });
@@ -26,12 +28,14 @@ export function validateCodBuilder(value) {
   if (!Array.isArray(value.customFields) || value.customFields.length > 30) throw Error('Use up to 30 custom fields.');
   const ids = new Set();
   value.customFields = value.customFields.map(field => {
+    if (!field || typeof field !== 'object') throw Error('Choose a valid custom field.');
     const id = String(field.id || ''), label = String(field.label || '').trim();
     if (!/^[a-z][a-z0-9_]{0,39}$/.test(id) || ids.has(id)) throw Error('Custom field IDs must be unique.');
     ids.add(id);
     if (!label || label.length > 100) throw Error('Enter a custom field label of up to 100 characters.');
     if (!['text','textarea','select','checkbox'].includes(field.type)) throw Error('Choose a valid custom field type.');
-    const options = field.type === 'select' ? (field.options || []).map(v => String(v).trim()).filter(Boolean) : [];
+    if (field.type === 'select' && !Array.isArray(field.options)) throw Error('Custom field choices must be a list.');
+    const options = field.type === 'select' ? field.options.map(v => String(v).trim()).filter(Boolean) : [];
     if (field.type === 'select' && (!options.length || options.length > 30 || options.some(v => v.length > 100))) throw Error('Add between 1 and 30 choices.');
     return { id, label, type: field.type, required: field.required === true, placeholder: String(field.placeholder || '').slice(0,150), options };
   });
@@ -67,7 +71,7 @@ export function saveCustomCheckout(db, storeId, checkoutId, values) {
 }
 
 export function renderCodBuilder(cod, checkout, currency = 'INR') {
-  const json = JSON.stringify({ currency, shippingMethods:checkout.shippingMethods||[], shippingMethodId:checkout.shippingMethodId, shippingUnavailable:checkout.shippingUnavailable, fields: cod.fields, fieldOrder: cod.fieldOrder, customFields: cod.customFields || [], values: checkout.customFields || {}, style: cod.style, addons:cod.addons||[], selectedAddons:checkout.addons?.map(a=>a.productId)||[] }).replace(/</g,'\\u003c');
+  const json = JSON.stringify({ currency, animation:cod.animation || 'none', shippingMethods:checkout.shippingMethods||[], shippingMethodId:checkout.shippingMethodId, shippingUnavailable:checkout.shippingUnavailable, fields: cod.fields, fieldOrder: cod.fieldOrder, customFields: cod.customFields || [], values: checkout.customFields || {}, style: cod.style, addons:cod.addons||[], selectedAddons:checkout.addons?.map(a=>a.productId)||[] }).replace(/</g,'\\u003c');
   return `<script type="application/json" id="cod-builder-settings">${json}</script><script src="/cod-checkout-builder.js"></script>`;
 }
 
