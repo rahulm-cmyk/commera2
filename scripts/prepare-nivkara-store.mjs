@@ -38,6 +38,7 @@ const ingredients = [];
 for (const name of ['bhringraj', 'amla', 'neem', 'argan']) ingredients.push({ heading: name === 'argan' ? 'Argan oil' : name[0].toUpperCase() + name.slice(1), text: '', image: await asset(`nivkara-${name}`, `${cdn}nivkara-v2-macro-${name}.png?width=640`, 640) });
 const section = (id, type, heading, values = {}) => ({ id: `section-${id}`, type, heading, text: '', visible: true, eyebrow: '', alignment: 'left', colorScheme: 'default', fullWidth: true, ...values });
 const productUrl = `{{store}}/products/${products[0].slug}`;
+const announcementMessage = 'Sticky ⚡ High demand — orders dispatch in 3–4 days | 🚚 FREE Shipping Across India on All Orders | 🌿 19 Ayurvedic Herbs · Non-Sticky ✨';
 const sections = [
   section('nivkara-trust', 'benefits', '', { layout: 'strip', colorScheme: 'contrast', blocks: [{ heading: 'Ayurvedic botanicals' }, { heading: '100 ml hair oil' }, { heading: 'Cash on delivery' }, { heading: 'Care, at your own pace' }] }),
   section('nivkara-problem', 'benefits', 'A little more care for your everyday hair.', { eyebrow: 'The everyday challenge', layout: 'numbered', blocks: [{ heading: 'Busy days', text: 'Make room for a routine you can return to.' }, { heading: 'City living', text: 'Give your wash-day ritual a moment of attention.' }, { heading: 'Changing routines', text: 'Choose products that fit the way you care for your hair.' }, { heading: 'Daily styling', text: 'Balance the finishing touches with regular care.' }] }),
@@ -60,6 +61,7 @@ const pack = { format: 'commera-store-package', version: 1, name: 'Nivkara', pri
   downsells: [{ productSlug: products[2].slug, offerProductSlug: products[0].slug, title: 'Start with the hair oil', pricePaise: products[0].pricePaise }],
   exitOffers: [{ name: 'Hair oil offer - review before enabling', productSlug: products[0].slug, status: 'draft', discountType: 'fixed', discountValue: 19900, headline: 'A little extra care', message: 'Review the offer before placing your order.', buttonText: 'Apply offer', rejectText: 'No thanks' }],
 };
+pack.home.announcementMessage = announcementMessage;
 await writeFile(`${folder}/nivkara-store.json`, JSON.stringify(pack));
 await writeFile(`${folder}/sources.json`, JSON.stringify({ catalogue: 'https://nivkara.com/products.json?limit=100', capturedAt: new Date().toISOString(), products: products.map(({name,pricePaise,stock}) => ({name,pricePaise,stock})), bundle: { source: 'https://nivkara.com/', derivation: 'Two singles at 499 minus the displayed 199 saving = 799' }, sources }, null, 2));
 console.log(JSON.stringify({ package: `${folder}/nivkara-store.json`, products: products.map(({ name, pricePaise, stock }) => ({ name, pricePaise, stock })) }, null, 2));
