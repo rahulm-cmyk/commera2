@@ -28,8 +28,15 @@ export function renderStoreChrome(model, policies = [], options = {}) {
     `<a href="${escape(options.homeSections&&link.url===homeHref?'#':options.homeSections&&String(link.url).startsWith('#')?link.url:storeLink(link.url, store.slug))}">${escape(link.label)}</a>`
   ).join("");
   const message = home.announcement;
+  const announcementItems = String(message?.message || "")
+    .split("|")
+    .map((item) => item.trim())
+    .filter(Boolean);
+  const announcementContent = announcementItems.length > 1
+    ? `<div class="store-announcement-track"><div class="store-announcement-group">${announcementItems.map((item) => `<span class="store-announcement-item">${escape(item)}</span>`).join("")}</div><div class="store-announcement-group" aria-hidden="true">${announcementItems.map((item) => `<span class="store-announcement-item">${escape(item)}</span>`).join("")}</div></div>`
+    : `<span>${escape(message?.message)}</span>`;
   const announcement = message?.enabled
-    ? `<aside class="store-announcement" data-store-editor-section="announcement" style="--announcement-bg:${escape(message.backgroundColor)};--announcement-text:${escape(message.textColor)}"><span>${escape(message.message)}</span>${message.linkText && message.linkUrl ? `<a href="${escape(storeLink(message.linkUrl, store.slug))}">${escape(message.linkText)}</a>` : ""}</aside>`
+    ? `<aside class="store-announcement${announcementItems.length > 1 ? " is-marquee" : ""}" data-store-editor-section="announcement" style="--announcement-bg:${escape(message.backgroundColor)};--announcement-text:${escape(message.textColor)}">${announcementContent}${message.linkText && message.linkUrl ? `<a href="${escape(storeLink(message.linkUrl, store.slug))}">${escape(message.linkText)}</a>` : ""}</aside>`
     : "";
   const header = `<header class="store-site-header${home.header?.sticky ? " is-sticky" : ""}" data-store-editor-section="header"><a class="store-site-brand" href="${brandHref}">${options.logoHtml || logo}</a><nav aria-label="Store navigation">${navigation}</nav><details class="store-mobile-menu"><summary aria-label="Open store menu"><img src="/icons/menu.svg" alt="" width="22" height="22"></summary><nav aria-label="Mobile store navigation">${navigation}</nav></details></header>`;
   const products = home.footer?.showProducts

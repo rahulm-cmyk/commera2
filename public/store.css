@@ -29,6 +29,35 @@
   font-weight: 650;
   text-align: center;
 }
+.store-announcement.is-marquee {
+  justify-content: flex-start;
+  overflow: hidden;
+  white-space: nowrap;
+}
+.store-announcement-track {
+  display: flex;
+  width: max-content;
+  flex: 0 0 auto;
+  animation: store-announcement-scroll 28s linear infinite;
+}
+.store-announcement-group {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+}
+.store-announcement-item {
+  display: inline-flex;
+  align-items: center;
+  min-height: 100%;
+  padding: 0 30px;
+}
+@keyframes store-announcement-scroll {
+  from { transform: translateX(0); }
+  to { transform: translateX(-50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .store-announcement-track { animation-play-state: paused; }
+}
 .store-announcement a {
   color: inherit;
   font-weight: 800;
