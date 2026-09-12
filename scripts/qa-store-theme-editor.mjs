@@ -58,8 +58,17 @@ try {
   assert.equal((await page.locator('.store-preview-panel').boundingBox()).width,closedWidth);
   await page.getByRole('button',{name:'Add section',exact:true}).click();
   const search=page.getByRole('searchbox',{name:'Search sections'});
+  assert.ok(await page.locator('[data-add-theme-section]').count()>=30,'The complete section library should be available');
+  await page.screenshot({path:`${output}/section-library.png`});
   await search.fill('not-a-section');
   assert.ok(await page.getByText('No sections found',{exact:true}).isVisible());
+  await search.fill('gallery');
+  await page.getByRole('button',{name:'Gallery',exact:true}).click();
+  const galleryId=await panel().getAttribute('data-theme-section-id');
+  assert.equal(await panel().locator('[data-section-field="layout"]').inputValue(),'slider');
+  assert.ok(await frame().locator(`[data-store-editor-section="${galleryId}"]`).evaluate(section=>section.classList.contains('layout-slider')));
+  await panel().getByRole('button',{name:'Remove section',exact:true}).click();
+  await page.getByRole('button',{name:'Add section',exact:true}).click();
   await search.fill('collapsible');
   assert.equal(await page.locator('[data-add-theme-section]:visible').count(),1);
   await page.screenshot({path:`${output}/section-picker.png`});

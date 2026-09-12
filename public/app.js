@@ -1690,7 +1690,10 @@ function storeView() {
     homeForm.dispatchEvent(new Event('input',{bubbles:true}));
     showStoreSection(section.id,{scroll:true});
   };
-  const openThemeSectionPicker = createSectionPicker(storeWorkspace,{catalog:themeSectionCatalog,icon:workspaceIcon,escape:esc,choose:(type,after)=>addThemeSection(newThemeSection(type),after)});
+  const openThemeSectionPicker = createSectionPicker(storeWorkspace,{catalog:themeSectionCatalog,icon:workspaceIcon,escape:esc,choose:(templateId,after)=>{
+    const template=themeSectionCatalog.find(item=>(item.id||item.type)===templateId);
+    if(template)addThemeSection(newThemeSection(template.type,template.preset),after);
+  }});
   $("#store-add-section")?.addEventListener("click", () => openThemeSectionPicker());
 
   const updateThemeBlockControls = panel => {

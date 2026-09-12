@@ -179,7 +179,7 @@ export function createPreviewInspector(frame, { enabled, select, addSection, lab
 export function createSectionPicker(host, {catalog,icon,escape,choose}) {
   const dialog=document.createElement('dialog');
   dialog.className='store-section-popover';dialog.setAttribute('aria-label','Add section');
-  dialog.innerHTML=`<div class="section-picker-search">${icon('search')}<input type="search" placeholder="Search sections" aria-label="Search sections"><button type="button" class="icon-button" aria-label="Close section picker" title="Close">${icon('x')}</button></div><div class="section-picker-body"><div class="section-picker-list">${catalog.map(item=>`<button type="button" data-add-theme-section="${item.type}">${icon(item.icon)}<span>${escape(item.label)}</span></button>`).join('')}<p hidden>No sections found</p></div><div class="section-picker-sample" aria-hidden="true"></div></div>`;
+  dialog.innerHTML=`<div class="section-picker-search">${icon('search')}<input type="search" placeholder="Search sections" aria-label="Search sections"><button type="button" class="icon-button" aria-label="Close section picker" title="Close">${icon('x')}</button></div><div class="section-picker-body"><div class="section-picker-list">${catalog.map(item=>`<button type="button" data-add-theme-section="${escape(item.id||item.type)}" aria-label="${escape(item.label)}">${icon(item.icon)}<span><strong>${escape(item.label)}</strong><small>${escape(item.description)}</small></span></button>`).join('')}<p hidden>No sections found</p></div><div class="section-picker-sample" aria-hidden="true"></div></div>`;
   host.append(dialog);
   const search=dialog.querySelector('input'),buttons=[...dialog.querySelectorAll('[data-add-theme-section]')],sample=dialog.querySelector('.section-picker-sample');
   let after='',opener;
@@ -192,7 +192,13 @@ export function createSectionPicker(host, {catalog,icon,escape,choose}) {
     'image-grid':'<h3>The details that matter</h3><div class="sample-columns"><div>'+icon('image')+'<b>Your first image</b></div><div>'+icon('image')+'<b>Your second image</b></div></div>',
     comparison:'<h3>A closer look</h3><p class="sample-question">Feature <span>Your product</span></p><p class="sample-question">Materials <span>Details</span></p>',
   };
-  const preview=button=>{buttons.forEach(item=>item.classList.toggle('active',item===button));sample.dataset.type=button.dataset.addThemeSection;sample.innerHTML=samples[button.dataset.addThemeSection];};
+  const catalogItem=button=>catalog.find(item=>(item.id||item.type)===button.dataset.addThemeSection);
+  const preview=button=>{
+    const item=catalogItem(button);if(!item)return;
+    buttons.forEach(candidate=>candidate.classList.toggle('active',candidate===button));
+    sample.dataset.type=item.type;sample.innerHTML=samples[item.type]||samples['rich-text'];
+    const heading=sample.querySelector('h3');if(heading)heading.textContent=item.preset?.heading||item.label;
+  };
   buttons.forEach(button=>{
     button.addEventListener('pointerenter',()=>preview(button));button.addEventListener('focus',()=>preview(button));
     button.onclick=()=>{dialog.close();choose(button.dataset.addThemeSection,after);};

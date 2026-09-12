@@ -57,7 +57,7 @@ export function normalizeThemeSections(value,current=[],normalizeImage) {
       colorScheme:choice(input.colorScheme,['default','accent','contrast'],'default'),
       fullWidth:bool(input.fullWidth,false),
       eyebrow:short(input.eyebrow,'Small heading',100),
-      layout:choice(input.layout,['cards','numbered','strip','timeline'],'cards'),
+      layout:choice(input.layout,['cards','numbered','strip','timeline','collage','rows','logos','slider'],'cards'),
     };
     if(type==='rich-text')Object.assign(section,{buttonText:short(input.buttonText,'Button text',60),buttonUrl:link(input.buttonUrl)});
     if(type==='image-with-text') {

@@ -7,6 +7,18 @@
 .theme-image-grid article>img,.theme-image-grid .theme-image-placeholder { width:100%; aspect-ratio:4/5; object-fit:cover; border-radius:var(--store-card-radius,8px); }
 .theme-image-grid article>div:not(.theme-image-placeholder) { padding-top:20px; }
 .theme-image-grid h3 { font-size:24px; }
+.theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+.theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child { grid-row:span 2; }
+.theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child>img,.theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child>.theme-image-placeholder { height:calc(100% - 70px); min-height:420px; aspect-ratio:auto; }
+.theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid { grid-template-columns:1fr; }
+.theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid>article { display:grid; grid-template-columns:minmax(220px,1fr) minmax(0,1fr); align-items:center; gap:36px; }
+.theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid>article:nth-child(even)>:first-child { order:2; }
+.theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid>article>div:not(.theme-image-placeholder) { padding:20px; }
+.theme-image-grid.layout-logos>.theme-section-inner>.theme-image-grid { align-items:center; }
+.theme-image-grid.layout-logos>.theme-section-inner>.theme-image-grid article { text-align:center; }
+.theme-image-grid.layout-logos>.theme-section-inner>.theme-image-grid article>img,.theme-image-grid.layout-logos>.theme-section-inner>.theme-image-grid .theme-image-placeholder { aspect-ratio:3/2; object-fit:contain; padding:16px; background:#fff; }
+.theme-image-grid.layout-slider>.theme-section-inner>.theme-image-grid,.theme-testimonials.layout-slider .theme-testimonial-grid,.theme-benefits.layout-slider .theme-benefit-grid { display:grid; grid-auto-flow:column; grid-auto-columns:minmax(250px,36%); grid-template-columns:none; overflow-x:auto; overscroll-behavior-inline:contain; scroll-snap-type:inline mandatory; scrollbar-width:thin; }
+.theme-image-grid.layout-slider>.theme-section-inner>.theme-image-grid>article,.theme-testimonials.layout-slider .theme-testimonial-grid>figure,.theme-benefits.layout-slider .theme-benefit-grid>article { scroll-snap-align:start; }
 .theme-comparison-wrap { overflow-x:auto; margin-top:36px; }
 .theme-comparison { width:100%; border-collapse:collapse; font-size:15px; text-align:left; table-layout:fixed; }
 .theme-comparison th,.theme-comparison td { padding:20px; border-bottom:1px solid #d6dbd2; overflow-wrap:anywhere; vertical-align:top; }
@@ -129,6 +141,12 @@ body[data-store-design="botanical"] [hidden] { display:none!important; }
 }
 @media(max-width:800px) {
   .theme-image-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
+  .theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid { grid-template-columns:1fr; }
+  .theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child { grid-row:auto; }
+  .theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child>img,.theme-image-grid.layout-collage>.theme-section-inner>.theme-image-grid>article:first-child>.theme-image-placeholder { min-height:0; aspect-ratio:4/5; }
+  .theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid>article { grid-template-columns:1fr; gap:0; }
+  .theme-image-grid.layout-rows>.theme-section-inner>.theme-image-grid>article:nth-child(even)>:first-child { order:0; }
+  .theme-image-grid.layout-slider>.theme-section-inner>.theme-image-grid,.theme-testimonials.layout-slider .theme-testimonial-grid,.theme-benefits.layout-slider .theme-benefit-grid { grid-auto-columns:minmax(230px,82%); }
   .theme-benefits.layout-numbered .theme-benefit-grid,.theme-benefits.layout-timeline .theme-benefit-grid { grid-template-columns:1fr; }
   .theme-benefits.layout-strip .theme-benefit-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:16px; }
   .theme-comparison th,.theme-comparison td { padding:14px 8px; font-size:13px; }

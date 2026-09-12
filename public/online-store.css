@@ -620,17 +620,21 @@ body.online-theme-editor-open .store-settings-area .store-section-visibility { b
 body.online-theme-editor-open .store-settings-area .store-editor-fieldset { animation:editor-panel-enter 120ms ease-out; }
 @keyframes editor-panel-enter { from { opacity:.65; transform:translateY(3px); } to { opacity:1; transform:none; } }
 
-.store-section-popover { position:fixed; inset:auto; width:min(600px,calc(100vw - 24px)); max-width:none; max-height:calc(100dvh - 90px); margin:0; padding:0; overflow:auto; border:1px solid #d3d6da; border-radius:8px; background:white; box-shadow:0 12px 40px rgb(0 0 0 / 18%); animation:editor-panel-enter 120ms ease-out; }
+.store-section-popover { position:fixed; inset:auto; width:min(680px,calc(100vw - 24px)); max-width:none; max-height:calc(100dvh - 90px); margin:0; padding:0; overflow:hidden; border:1px solid #d3d6da; border-radius:8px; background:white; box-shadow:0 12px 40px rgb(0 0 0 / 18%); animation:editor-panel-enter 120ms ease-out; }
 body.online-theme-editor-open:has(> #app-sidebar) .store-section-popover::backdrop { background:transparent; backdrop-filter:none; }
 .section-picker-search { display:flex; align-items:center; gap:8px; padding:10px 12px; border-bottom:1px solid #e1e3e5; }
 .section-picker-search > img { width:18px; height:18px; }
 .section-picker-search input { flex:1; min-width:0; min-height:34px; margin:0; padding:6px; border:0; box-shadow:none; font-size:13px; background:white; }
 .section-picker-search .icon-button { width:30px; min-width:30px; height:30px; padding:5px; border:0; background:transparent; }
-.section-picker-body { display:grid; grid-template-columns:230px minmax(0,1fr); min-height:270px; }
-.section-picker-list { padding:8px; border-right:1px solid #e1e3e5; }
-.section-picker-list > button { display:flex; align-items:center; gap:9px; width:100%; min-height:38px; padding:8px; border:0; border-radius:4px; background:white; color:#282c30; text-align:left; font-size:13px; }
+.section-picker-body { display:grid; grid-template-columns:310px minmax(0,1fr); height:min(470px,calc(100dvh - 150px)); min-height:270px; }
+.section-picker-list { min-width:0; padding:8px; overflow-y:auto; border-right:1px solid #e1e3e5; }
+.section-picker-list > button { display:grid; grid-template-columns:18px minmax(0,1fr); align-items:center; gap:10px; width:100%; min-height:54px; padding:8px 10px; border:0; border-radius:4px; background:white; color:#282c30; text-align:left; }
+.section-picker-list > button > span { display:grid; gap:2px; min-width:0; }
+.section-picker-list > button strong { overflow:hidden; font-size:13px; line-height:1.35; text-overflow:ellipsis; white-space:nowrap; }
+.section-picker-list > button small { color:#697176; font-size:11px; line-height:1.35; }
 .section-picker-list > button img { width:17px; height:17px; }
 .section-picker-list > button.active { background:#edf1fd; color:#264bc0; }
+.section-picker-list > button.active small { color:#52658d; }
 .section-picker-list > p { padding:10px; color:#62696e; font-size:13px; }
 .section-picker-sample { align-self:center; min-width:0; padding:28px 22px; color:#25292d; text-align:center; }
 .section-picker-sample h3 { margin:0 0 16px; font-size:19px; line-height:1.25; letter-spacing:0; }
@@ -733,7 +737,9 @@ body.online-theme-editor-open:has(> #app-sidebar) .store-section-popover::backdr
   body.online-theme-editor-open .online-theme-editor .store-workspace[data-mobile-panel="preview"] > :is(.store-section-nav,.store-settings-area,.store-theme-nav,.store-app-panel),
   body.online-theme-editor-open .online-theme-editor .store-workspace[data-mobile-panel="sections"] > :is(.store-settings-area,.store-theme-nav,.store-app-panel),
   body.online-theme-editor-open .online-theme-editor .store-workspace[data-mobile-panel="settings"] > :is(.store-section-nav,.store-theme-nav,.store-app-panel) { display:none; }
-  .section-picker-body { grid-template-columns:1fr; min-height:220px; }
+  .store-section-popover { overflow:hidden; }
+  .section-picker-body { grid-template-columns:1fr; height:min(620px,calc(100dvh - 145px)); min-height:220px; }
+  .section-picker-list { border-right:0; }
   .section-picker-sample { display:none; }
   .section-picker-search input { font-size:16px; }
 }

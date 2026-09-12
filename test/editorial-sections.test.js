@@ -1,13 +1,26 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import {normalizeThemeSections,normalizeThemeSettings,renderCustomSection} from '../src/theme-sections.js';
-import {clientSectionMarkup} from '../public/store-theme-sections.js';
+import {clientSectionMarkup,newThemeSection,themeSectionCatalog,themeSectionLabel} from '../public/store-theme-sections.js';
 import {createDatabase} from '../src/database.js';
 import {createApp} from '../src/server.js';
 const escape=value=>String(value??'').replaceAll('&','&amp;').replaceAll('<','&lt;').replaceAll('>','&gt;').replaceAll('"','&quot;');
 const png={name:'test.png',type:'image/png',data:'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='};
 const gallery={id:'section-gallery-001',type:'image-grid',visible:true,heading:'The collection',eyebrow:'A closer look',blocks:[{heading:'Cotton',text:'Carefully selected',image:png}]};
 const comparison={id:'section-compare-001',type:'comparison',visible:true,heading:'Compare',columnHeading:'Our product',otherHeading:'Other products',blocks:[{heading:'Format',text:'Pod',other:'Powder'}]};
+
+test('section library templates are unique, valid and keep their intended layouts',()=>{
+  assert.ok(themeSectionCatalog.length>=30,'The Add section library should include the complete practical template set');
+  assert.equal(new Set(themeSectionCatalog.map(item=>item.id)).size,themeSectionCatalog.length);
+  assert.equal(themeSectionLabel('image-grid'),'Image gallery');
+  for(const template of themeSectionCatalog) {
+    const section=newThemeSection(template.type,template.preset);
+    const [normalized]=normalizeThemeSections([section]);
+    assert.equal(normalized.type,template.type,template.label);
+    assert.equal(normalized.heading,template.preset?.heading??themeSectionLabel(template.type),template.label);
+    assert.equal(normalized.layout,template.preset?.layout??'cards',template.label);
+  }
+});
 
 test('editorial sections share markup between the editor and saved storefront',()=>{
   for(const section of normalizeThemeSections([gallery,comparison,{id:'section-steps-001',type:'benefits',heading:'Routine',layout:'timeline',blocks:[{heading:'Start',text:'First step'}]},{id:'section-rich-001',type:'rich-text',heading:'Hello <script>',buttonText:'Shop',buttonUrl:'#products'}])){
