@@ -41,10 +41,12 @@ import { createAccountEmailProvider } from "./account-email.js";
 import { pageTemplates } from "./page-templates.js";
 import { renderBlocks, blockSectionStyle } from '../public/page-blocks.js';
 import { confirmationAnimation, orderConfirmation, confirmationIcon } from "./confirmation.js";
+import { env } from "./env.js";
+import { createTypeSafeProjectOptions } from "./typesafe-ai-provider.js";
 
 const root = fileURLToPath(new URL("../public/", import.meta.url));
 const visitorTokenSecret =
-  process.env.VISITOR_TOKEN_SECRET || randomBytes(32).toString("hex");
+  env.VISITOR_TOKEN_SECRET || randomBytes(32).toString("hex");
 const createVisitorToken = (storeId, pageSlug) => {
   const payload = Buffer.from(
       JSON.stringify({
@@ -1011,11 +1013,11 @@ function onlineContentPage(model, page, policies, preview = false) {
 
 export function createApp({
   db = createDatabase(),
-  port = Number(process.env.PORT || 4173),
+  port = env.PORT,
   projectOptions = {},
   deliveryAdapters = {},
   domainOptions = {},
-  domainSyncIntervalMs = Number(process.env.DOMAIN_SYNC_INTERVAL_MS || 60_000),
+  domainSyncIntervalMs = env.DOMAIN_SYNC_INTERVAL_MS,
   salesChannelAdapters = {},
   pincodeOptions = {},
   reviewImportOptions = {},
@@ -1038,6 +1040,10 @@ export function createApp({
   accountEmailProvider = createAccountEmailProvider(),
 } = {}) {
   const settingsService = new SettingsService(db);
+  const resolvedProjectOptions =
+    projectOptions.aiGenerator || projectOptions.aiProvider
+      ? projectOptions
+      : createTypeSafeProjectOptions(env);
   const shipping = new ShippingService(db);
   const pincodes = new PincodeService(db, pincodeOptions);
   const reviews = new ReviewService(db);
@@ -1056,20 +1062,20 @@ export function createApp({
   const campaigns = new CampaignService(db);
   const utmSheets = new UtmSheetService(db, utmSheetOptions);
   const operations = new ProductOperationsService(db);
-  const projects = new ProjectService(db, projectOptions);
+  const projects = new ProjectService(db, resolvedProjectOptions);
   const storefront = new StorefrontService(db);
   const onlineStore = new OnlineStoreService(db);
   const delivery = new DeliveryService(db, { adapters: deliveryAdapters });
-  const hostedByRender = process.env.RENDER === "true",
+  const hostedByRender = env.RENDER,
     domainSslMode = String(
-      process.env.DOMAIN_SSL_PROVIDER ||
+      env.DOMAIN_SSL_PROVIDER ||
         (hostedByRender ? "https" : "manual"),
     ).toLowerCase(),
     domains = new DomainService(db, {
-    cnameTarget: process.env.DOMAIN_CNAME_TARGET,
-    apexTarget: process.env.DOMAIN_APEX_TARGET,
-    platformDomain: process.env.DOMAIN_PLATFORM_HOST,
-    provider: process.env.DOMAIN_PROVIDER,
+    cnameTarget: env.DOMAIN_CNAME_TARGET,
+    apexTarget: env.DOMAIN_APEX_TARGET,
+    platformDomain: env.DOMAIN_PLATFORM_HOST,
+    provider: env.DOMAIN_PROVIDER,
     requireOwnershipTxt: !hostedByRender,
     ...(domainSslMode === "https"
       ? { sslProvider: createHttpsDomainProvider() }
@@ -1097,7 +1103,7 @@ export function createApp({
     secret: otpSecret,
   });
   const auth = new AuthService(db, authOptions);
-  const storePreviewTokens = createStorePreviewTokens({ secret: process.env.PREVIEW_TOKEN_SECRET || undefined });
+  const storePreviewTokens = createStorePreviewTokens({ secret: env.PREVIEW_TOKEN_SECRET || undefined });
   const googleAuth =
       googleAuthProvider === undefined
         ? createGoogleAuthProvider()
@@ -1105,8 +1111,8 @@ export function createApp({
     googleStateSecret =
       String(
         oauthStateSecret ||
-          process.env.AUTH_OAUTH_STATE_SECRET ||
-          process.env.GOOGLE_CLIENT_SECRET ||
+          env.AUTH_OAUTH_STATE_SECRET ||
+          env.GOOGLE_CLIENT_SECRET ||
           "",
       ) || randomBytes(32).toString("hex"),
     signGoogleState = (details) => {
@@ -4033,6 +4039,11 @@ export function createApp({
           "/cod-checkout-builder.js": "cod-checkout-builder.js",
           "/checkout.js": "checkout.js",
           "/checkout-motion.js": "checkout-motion.js",
+          "/order-animation.js": "order-animation.js",
+          "/order-animation-options.js": "order-animation-options.js",
+          "/order-animation-scene.js": "order-animation-scene.js",
+          "/order-animation-editor.js": "order-animation-editor.js",
+          "/order-animation.css": "order-animation.css",
           "/cod-form-launcher.js": "cod-form-launcher.js",
           "/account.js": "account.js",
           "/merchant-workspace.js": "merchant-workspace.js",
@@ -4089,7 +4100,7 @@ export function createApp({
     get port() {
       return actualPort;
     },
-    start: (host = process.env.HOST || "0.0.0.0") =>
+    start: (host = env.HOST) =>
       new Promise((resolve, reject) => {
         server.once("error", reject);
         server.listen(port, host, () => {
@@ -4121,7 +4132,7 @@ export function createApp({
 }
 
 if (process.argv[1] && fileURLToPath(import.meta.url) === process.argv[1]) {
-  const host = process.env.HOST || "0.0.0.0";
+  const host = env.HOST;
   const app = createApp();
   await app.start(host);
   console.log(`Commera2 running at http://${host}:${app.port}`);

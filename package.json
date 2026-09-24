@@ -16,9 +16,12 @@
     "node": ">=24"
   },
   "dependencies": {
+    "@t3-oss/env-core": "^0.13.11",
+    "@typesafe-ai/sdk": "^0.6.0",
     "google-auth-library": "^10.9.1",
     "pg": "^8.23.0",
-    "sanitize-html": "^2.17.7"
+    "sanitize-html": "^2.17.7",
+    "zod": "^4.6.5"
   },
   "devDependencies": {
     "lucide-static": "1.43.0"

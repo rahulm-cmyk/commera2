@@ -1908,7 +1908,7 @@ body:has(> #app-sidebar) .store-preview-frame {
 }
 
 /* Dialog sizing variants keep their existing widths and internal scrolling. */
-body:has(> #app-sidebar) dialog {
+body:has(> #app-sidebar) dialog:not(.order-animation-dialog) {
   min-width: 0;
   max-width: calc(100vw - 32px);
   max-height: calc(100dvh - 32px);
@@ -1921,11 +1921,11 @@ body:has(> #app-sidebar) dialog {
   overscroll-behavior: contain;
 }
 
-body:has(> #app-sidebar) dialog::backdrop {
+body:has(> #app-sidebar) dialog:not(.order-animation-dialog)::backdrop {
   background: rgb(25 39 49 / 38%);
 }
 
-body:has(> #app-sidebar) dialog[open] {
+body:has(> #app-sidebar) dialog[open]:not(.order-animation-dialog) {
   animation: merchant-dialog-enter 180ms ease-out;
 }
 

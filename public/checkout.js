@@ -14,6 +14,25 @@ let orderPending = false;
 const originalLabel = submitButton.textContent;
 const lockedControls = new Map();
 const progress = [...document.querySelectorAll('.checkout-progress strong')];
+let orderAnimationSettings = { style: 'none' };
+try { orderAnimationSettings = JSON.parse(document.querySelector('#cod-builder-settings')?.textContent || '{}').orderAnimation || orderAnimationSettings; } catch {}
+const orderAnimationModule = orderAnimationSettings.style !== 'none'
+  ? import('./order-animation.js').catch(() => null) : Promise.resolve(null);
+
+async function completeOrder(url, recovered = false) {
+  // Keep navigation independent of optional art, slow module loads, and canvas errors.
+  let navigated = false, importTimer;
+  const navigate = () => { if (!navigated) { navigated = true; location.assign(url); } };
+  const watchdog = setTimeout(navigate, 6200);
+  try {
+    if (!recovered && orderAnimationSettings.style !== 'none') {
+      const module = await Promise.race([orderAnimationModule, new Promise(resolve => { importTimer = setTimeout(() => resolve(null), 700); })]);
+      clearTimeout(importTimer);
+      if (module && !navigated) await module.showOrderAnimation({ ...orderAnimationSettings, productImage: document.querySelector('.checkout-product img') });
+    }
+  } catch { /* The order is confirmed even when its optional animation is unavailable. */ }
+  finally { clearTimeout(importTimer); clearTimeout(watchdog); navigate(); }
+}
 
 function syncProgress() {
   const contact = ['name', 'phone'].every(key => form.elements[key]?.value.trim() && form.elements[key].validity.valid);
@@ -237,9 +256,9 @@ form.addEventListener('submit', async event => {
       method: 'POST', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({ storeId: STORE_ID, visitorSessionId: window.commera2VisitorSessionId || null, analyticsConsentGranted: window.commera2AnalyticsConsent?.() ?? false, consentGranted: window.commera2TrackingConsent?.() ?? false }),
     }, 'Could not confirm order');
-    location.assign(out.thankYouUrl);
+    await completeOrder(out.thankYouUrl, out.completed === true);
   } catch (error) {
-    if (error.receiptUrl) { location.assign(error.receiptUrl); return; }
+    if (error.receiptUrl) { await completeOrder(error.receiptUrl, true); return; }
     setBusy(false); reportCheckoutError(error); submitButton.focus({ preventScroll: true });
   }
 });

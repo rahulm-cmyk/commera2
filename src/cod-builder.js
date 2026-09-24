@@ -1,3 +1,5 @@
+import { validOrderAnimation, normalizeOrderAnimation } from '../public/order-animation-options.js';
+
 export function migrateCodBuilder(db) {
   db.exec(`CREATE TABLE IF NOT EXISTS cod_checkout_fields (
     checkout_id TEXT PRIMARY KEY REFERENCES checkout_sessions(id) ON DELETE CASCADE,
@@ -12,6 +14,12 @@ export function validateCodBuilder(value) {
   if (!['page','popup','embedded'].includes(value.displayMode)) throw Error('Choose a valid form display mode.');
   value.animation ??= 'none';
   if (!['none', 'fade', 'slide'].includes(value.animation)) throw Error('Choose Off, Fade, or Slide for checkout animation.');
+  if (value.orderAnimation !== undefined) {
+    const option = value.orderAnimation;
+    if (!option || typeof option !== 'object' || Array.isArray(option) || !validOrderAnimation(option.style)) throw Error('Choose a valid order animation.');
+    if (!Number.isInteger(option.durationMs) || option.durationMs < 2000 || option.durationMs > 5000) throw Error('Order animation duration must be between 2 and 5 seconds.');
+  }
+  value.orderAnimation = normalizeOrderAnimation(value.orderAnimation);
   value.postPurchaseLimit = Number(value.postPurchaseLimit ?? 1);
   if (!Number.isInteger(value.postPurchaseLimit) || value.postPurchaseLimit<1 || value.postPurchaseLimit>5) throw Error('Choose between one and five post-purchase offers.');
   value.addons ||= [];
@@ -71,8 +79,8 @@ export function saveCustomCheckout(db, storeId, checkoutId, values) {
 }
 
 export function renderCodBuilder(cod, checkout, currency = 'INR') {
-  const json = JSON.stringify({ currency, animation:cod.animation || 'none', shippingMethods:checkout.shippingMethods||[], shippingMethodId:checkout.shippingMethodId, shippingUnavailable:checkout.shippingUnavailable, fields: cod.fields, fieldOrder: cod.fieldOrder, customFields: cod.customFields || [], values: checkout.customFields || {}, style: cod.style, addons:cod.addons||[], selectedAddons:checkout.addons?.map(a=>a.productId)||[] }).replace(/</g,'\\u003c');
-  return `<script type="application/json" id="cod-builder-settings">${json}</script><script src="/cod-checkout-builder.js"></script>`;
+  const json = JSON.stringify({ currency, orderAnimation:normalizeOrderAnimation(cod.orderAnimation), animation:cod.animation || 'none', shippingMethods:checkout.shippingMethods||[], shippingMethodId:checkout.shippingMethodId, shippingUnavailable:checkout.shippingUnavailable, fields: cod.fields, fieldOrder: cod.fieldOrder, customFields: cod.customFields || [], values: checkout.customFields || {}, style: cod.style, addons:cod.addons||[], selectedAddons:checkout.addons?.map(a=>a.productId)||[] }).replace(/</g,'\\u003c');
+  return `<link rel="stylesheet" href="/order-animation.css"><script type="application/json" id="cod-builder-settings">${json}</script><script src="/cod-checkout-builder.js"></script>`;
 }
 
 export function checkoutAddons(db, storeId, checkoutId, config, input, strict = false) {

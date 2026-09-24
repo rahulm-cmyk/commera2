@@ -2148,6 +2148,7 @@ function codFormView() {
   content.innerHTML = `<div class="settings-section-tabs" role="tablist">${[
     ["general", "General"],
     ["fields", "Customer Fields"],
+    ["animation", "Order animation"],
     ["addons", "Optional Extras"],
     ["otp", "OTP Verification"],
     ["summary", "Order Summary"],

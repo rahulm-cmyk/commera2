@@ -1,6 +1,8 @@
 import { animateCheckout } from './checkout-motion.js';
+import { mountOrderAnimationEditor } from './order-animation-editor.js';
 
 export function mountCodFormEditor({ form, config, esc, products = [] }) {
+  const orderAnimation = mountOrderAnimationEditor(form, config);
   const pane = form.querySelector('[data-cod-pane="fields"]');
   const original = [...pane.querySelectorAll('.cod-field-card')];
   const order = config.fieldOrder || Object.keys(config.fields);
@@ -69,7 +71,7 @@ export function mountCodFormEditor({ form, config, esc, products = [] }) {
   }
   addonPane.querySelector('#cod-add-addon').onclick=()=>{addons.push({productId:0,title:'',pricePaise:0});drawAddons();};
   drawAddons();
-  const read = () => ({animation:form.elements['cod-animation'].value,addons:structuredClone(addons),fieldOrder:[...host.querySelectorAll('[data-field-key]')].map(row=>row.dataset.fieldKey),customFields:structuredClone(custom),style:Object.fromEntries([...pane.querySelectorAll('[name^="cod-style-"]')].map(input=>[input.name.slice(10),input.type==='range'?Number(input.value):input.value]))});
+  const read = () => ({orderAnimation:orderAnimation.read(),animation:form.elements['cod-animation'].value,addons:structuredClone(addons),fieldOrder:[...host.querySelectorAll('[data-field-key]')].map(row=>row.dataset.fieldKey),customFields:structuredClone(custom),style:Object.fromEntries([...pane.querySelectorAll('[name^="cod-style-"]')].map(input=>[input.name.slice(10),input.type==='range'?Number(input.value):input.value]))});
   function preview() {
     const draft=read(), node=pane.querySelector('#cod-live-preview');
     node.style.background=draft.style.background;node.style.color=draft.style.text;node.style.borderRadius=`${draft.style.radius}px`;
