@@ -103,8 +103,6 @@ if (env.NODE_ENV === "production") {
   requireWhen(true, "VISITOR_TOKEN_SECRET", "in production");
   requireWhen(true, "PREVIEW_TOKEN_SECRET", "in production");
   requireWhen(true, "AUTH_OAUTH_STATE_SECRET", "in production");
-  requireWhen(true, "PIXEL_CREDENTIALS_SECRET", "in production");
-  requireWhen(true, "OTP_CREDENTIALS_SECRET", "in production");
 }
 
 for (const variable of [
