@@ -21,7 +21,7 @@ body[data-store-design="botanical"] #section-nivkara-method h2 { max-width:640px
 body[data-store-design="botanical"] #section-nivkara-ingredients { background:#fffcf5; }
 body[data-store-design="botanical"] #section-nivkara-ingredients img { aspect-ratio:1/1; }
 /* Keep herb labels readable when the storefront is shown in a narrow preview pane. */
-body[data-store-design="botanical"] #section-nivkara-ingredients>.theme-section-inner>.theme-image-grid { display:grid!important; width:100%; grid-template-columns:repeat(2,minmax(0,1fr))!important; gap:20px; }
+body[data-store-design="botanical"] #section-nivkara-ingredients>.theme-section-inner>.theme-image-grid { display:grid!important; width:100%; grid-template-columns:repeat(4,minmax(0,1fr))!important; gap:20px; }
 body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid h3 { overflow-wrap:normal; word-break:normal; }
 body[data-store-design="botanical"] .featured-grid { gap:28px; }
 body[data-store-design="botanical"] .featured-product-card { padding:0; }
