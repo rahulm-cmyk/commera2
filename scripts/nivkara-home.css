@@ -20,6 +20,9 @@ body[data-store-design="botanical"] #section-nivkara-problem h2 { max-width:660p
 body[data-store-design="botanical"] #section-nivkara-method h2 { max-width:640px; }
 body[data-store-design="botanical"] #section-nivkara-ingredients { background:#fffcf5; }
 body[data-store-design="botanical"] #section-nivkara-ingredients img { aspect-ratio:1/1; }
+/* Keep herb labels readable when the storefront is shown in a narrow preview pane. */
+body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid { grid-template-columns:repeat(auto-fit,minmax(170px,1fr)); }
+body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid h3 { overflow-wrap:normal; word-break:normal; }
 body[data-store-design="botanical"] .featured-grid { gap:28px; }
 body[data-store-design="botanical"] .featured-product-card { padding:0; }
 body[data-store-design="botanical"] .featured-product-card>a>img { width:100%; aspect-ratio:1/1; object-fit:contain; background:#f3ecdc; border-radius:8px; }
