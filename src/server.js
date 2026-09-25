@@ -43,6 +43,7 @@ import { renderBlocks, blockSectionStyle } from '../public/page-blocks.js';
 import { confirmationAnimation, orderConfirmation, confirmationIcon } from "./confirmation.js";
 import { env } from "./env.js";
 import { createTypeSafeProjectOptions } from "./typesafe-ai-provider.js";
+import { createPersonalizer, personalizationConfig } from './personalization.js';
 
 const root = fileURLToPath(new URL("../public/", import.meta.url));
 const visitorTokenSecret =
@@ -795,6 +796,12 @@ function executablePublicPage(input) {
     page: { ...input.page, contentJson: JSON.stringify(preparedContent) },
     reviewsData: preparedReviews,
   });
+  const personalization = personalizationConfig(content);
+  if (personalization.enabled && input.page.status === 'published' && input.page.creationMethod !== 'upload') {
+    const config = { storeId: input.page.storeId, pageId: input.page.id, pageSlug: input.page.slug,
+      revision: personalization.revision, token: createVisitorToken(input.page.storeId, input.page.slug) };
+    html = html.replace('</body>', `<script type="application/json" id="jev-config">${scriptJson(config)}</script><script defer src="/personalization.js"></script></body>`);
+  }
   html = html.replace(
     "Pay when your order reaches you.",
     "Pay when your order reaches you. Other payment options can be added in a future update.",
@@ -1038,8 +1045,16 @@ export function createApp({
   oauthStateSecret,
   utmSheetOptions = {},
   accountEmailProvider = createAccountEmailProvider(),
+  personalizationClient,
 } = {}) {
   const settingsService = new SettingsService(db);
+  const personalize = createPersonalizer({
+    apiKey: env.TYPESAFE_AI_ENABLED ? env.TYPESAFE_API_KEY : undefined,
+    model: env.TYPESAFE_MODEL,
+    client: personalizationClient,
+  });
+  const personalizationLimiter = createRateLimiter({ limit: 30, windowMs: 60_000 });
+  const personalizationBudget = createRateLimiter({ limit: 300, windowMs: 3_600_000 });
   const resolvedProjectOptions =
     projectOptions.aiGenerator || projectOptions.aiProvider
       ? projectOptions
@@ -2289,6 +2304,23 @@ export function createApp({
             input,
           ),
         );
+      }
+      match = path.match(/^\/api\/public\/stores\/(\d+)\/personalization$/);
+      if (match && req.method === 'POST') {
+        res.setHeader('cache-control', 'private, no-store');
+        const storeId = Number(match[1]), input = await body(req);
+        verifyVisitorToken(input.visitorToken, storeId, input.pageSlug);
+        const privacy = settingsService.get(storeId).privacy;
+        if (input.analyticsConsentGranted !== true || !analyticsAllowed(privacy, input))
+          return json(res, 200, { variant: 'original' });
+        if (typeof input.sessionId !== 'string' || !/^[a-zA-Z0-9_-]{8,100}$/.test(input.sessionId))
+          return json(res, 400, { error: 'Invalid visitor session' });
+        if (!personalizationLimiter.take(String(storeId)).allowed || !personalizationBudget.take('global').allowed)
+          return json(res, 429, { variant: 'original' });
+        const store = service.getStore(storeId);
+        const published = service.getPublishedPage(store.slug, input.pageSlug);
+        if (published.page.creationMethod === 'upload') return json(res, 200, { variant: 'original' });
+        return json(res, 200, await personalize({ ...published, signals: input.signals || {}, sessionId: input.sessionId }));
       }
       match = path.match(/^\/api\/public\/stores\/(\d+)\/tracking-events$/);
       if (match && req.method === "POST") {
@@ -4026,6 +4058,7 @@ export function createApp({
         const files = {
           "/": "index.html",
           "/app.js": "app.js",
+          "/personalization.js": "personalization.js",
           "/cod-form-editor.js": "cod-form-editor.js",
           "/shipping-rules.js": "shipping-rules.js",
           "/store-theme-sections.js": "store-theme-sections.js",

@@ -29,6 +29,7 @@ body[data-store-design="botanical"] .featured-product-card p { font-size:18px; }
 body[data-store-design="botanical"] .featured-product-card span { box-shadow:none; }
 body[data-store-design="botanical"] #section-nivkara-finale img { width:min(100%,320px); justify-self:center; object-fit:contain; aspect-ratio:1/1; border-radius:8px; }
 body[data-store-design="botanical"] .theme-benefit-grid article { border-radius:8px; }
+body[data-store-design="botanical"] section.theme-image-grid { display:block; }
 @media(max-width:1100px) {
   body[data-store-design="botanical"] .store-home-hero { min-height:620px; padding-block:54px; gap:36px; }
   body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:48px; }
@@ -40,10 +41,29 @@ body[data-store-design="botanical"] .theme-benefit-grid article { border-radius:
   body[data-store-design="botanical"] .store-home-hero { min-height:0; grid-template-columns:1fr; padding:40px 24px 36px; gap:32px; }
   body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:42px; }
   body[data-store-design="botanical"] .store-home-hero-copy>p { font-size:15px; }
+  body[data-store-design="botanical"] .store-home-hero-copy > .hero-cta { flex:0 0 100%; width:100%; }
+  body[data-store-design="botanical"] .botanical-hero-extras { display:block; flex:0 0 100%; width:100%; }
+  body[data-store-design="botanical"] .hero-secondary { width:100%; margin:10px 0 0; }
   body[data-store-design="botanical"] .store-home-banner { width:min(100%,430px); aspect-ratio:4/4.4; height:auto; min-height:0; border-radius:180px 180px 20px 20px; }
   body[data-store-design="botanical"] .theme-custom-section h2 { font-size:34px; }
   body[data-store-design="botanical"] .theme-image-text .theme-section-inner { grid-template-columns:1fr; }
   body[data-store-design="botanical"] .featured-grid { grid-template-columns:1fr; }
   body[data-store-design="botanical"] .featured-product-card>a>img { max-height:400px; }
+  body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid { grid-template-columns:repeat(2,minmax(0,1fr)); gap:20px; }
+  body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid article>div { padding-top:12px; }
+  body[data-store-design="botanical"] #section-nivkara-ingredients .theme-image-grid h3 { font-size:20px; line-height:1.25; overflow-wrap:normal; word-break:normal; }
 }
-@media(max-width:360px) { body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:36px; } }
+@media(max-width:360px) {
+  body[data-store-design="botanical"] .store-home-hero-copy h1 { font-size:36px; }
+  body[data-store-design="botanical"] :is(.hero-cta,.hero-secondary) {
+    flex:0 0 100%;
+    width:100%;
+    min-height:52px;
+    padding:14px 18px;
+    font-size:14px;
+    line-height:1.2;
+  }
+  body[data-store-design="botanical"] .hero-secondary { margin-top:10px; }
+  body[data-store-design="botanical"] .hero-badges { justify-content:center; }
+  body[data-store-design="botanical"] .hero-badges li { font-size:10px; padding:7px 9px; }
+}

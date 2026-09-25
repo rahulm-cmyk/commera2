@@ -2743,6 +2743,7 @@ body.exit-offer-open {
   font-weight: 800;
 }
 .checkout-page .checkout-summary {
+  position: static;
   top: 20px;
   padding: 26px;
   overflow: hidden;

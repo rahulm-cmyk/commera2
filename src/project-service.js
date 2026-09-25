@@ -3,6 +3,7 @@ import sanitizeHtml from "sanitize-html";
 import { confirmationAnimation } from "./confirmation.js";
 import { editablePage, publishPageSnapshot } from "./page-publication.js";
 import { normalizeBlocks } from '../public/page-blocks.js';
+import { personalizationConfig } from './personalization.js';
 
 const socialProofType = (value) =>
   String(value || "real").toLowerCase() === "fake" ? "fake" : "real";
@@ -590,6 +591,8 @@ export class ProjectService {
         next.urgency,
       );
     }
+    if (next.pageSettings?.jevEnabled === true && !personalizationConfig(next).variants.length)
+      throw new Error('Add at least one variation headline before enabling Jev personalization.');
     this.#validateContent(next);
     for (const section of next.sections || []) {
       if (section.type === 'blocks') section.blocks = normalizeBlocks(section.blocks);
